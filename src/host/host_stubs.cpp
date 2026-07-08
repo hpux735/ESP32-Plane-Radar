@@ -46,10 +46,12 @@ static Aircraft s_aircraft[kMaxAircraft];
 static size_t s_count = 0;
 static PollFn s_poll = nullptr;
 static unsigned long s_last_update_ms = 0;
+static unsigned long s_fetch_count = 0;
 
 size_t aircraftCount() { return s_count; }
 const Aircraft* aircraftList() { return s_aircraft; }
 unsigned long lastUpdateMs() { return s_last_update_ms; }
+unsigned long fetchCount() { return s_fetch_count; }
 
 void setPollFn(PollFn fn) { s_poll = fn; }
 
@@ -195,6 +197,7 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
   }
   s_count = n;
   s_last_update_ms = millis();
+  ++s_fetch_count;
   std::printf("adsb: %zu aircraft in %.1f nm\n", n, nm);
   return true;
 }

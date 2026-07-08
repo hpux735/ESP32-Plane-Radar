@@ -402,16 +402,15 @@ inline bool showTrend(float vs_fpm) {
   return std::fabs(vs_fpm) >= kTrendThresholdFpm;
 }
 
-// Tag mode alternation: sync to the ADS-B fetch cadence so the text swap
-// happens halfway between position updates. That way the two visual events
-// — new positions (on fetch) and new mode (mid-cycle) — don't race each
-// other. Assumes the fetch loop is ~3 s (see kAdsbFetchIntervalMs). The
-// half-window is short enough that if the actual interval is 2 or 4 s the
-// pattern is still "one flip per cycle at roughly midway".
-constexpr unsigned long kTagSweepHalfMs = 1500;
+// Tag mode alternation: flip ONCE per fetch, so each mode gets an entire
+// position-update window. The visual rhythm is:
+//   [fetch N]   → positions move, ALT shown for ~3 s
+//   [fetch N+1] → positions move, TYPE shown for ~3 s
+//   [fetch N+2] → positions move, ALT again, ...
+// This makes the mode change coincide with the position change instead of
+// racing it, which reads more naturally than a mid-cycle swap.
 inline bool tagShowsAltitude() {
-  const unsigned long since = millis() - services::adsb::lastUpdateMs();
-  return since < kTagSweepHalfMs;  // ALT right after fetch, TYPE mid-cycle
+  return (services::adsb::fetchCount() & 1u) == 0;
 }
 
 // A small filled triangle: apex UP for climb, apex DOWN for descent. Drawn
@@ -473,26 +472,43 @@ TagContent buildTagContent(const services::adsb::Aircraft& p, bool show_alt) {
 // Each slot is (dx, dy from symbol center to text-box anchor point) plus
 // the datum that keeps the text on the OUTWARD side of that anchor.
 
-enum class Slot : uint8_t { NE, E, SE, S, SW, W, NW, N, kCount };
-constexpr uint8_t kSlotCount = 8;
+// Two rings of 8 anchor points each: the inner ring is the preferred
+// placement (close leader, short lines). If everything in the inner ring
+// collides, the outer ring provides fallback slots at a longer leader.
+constexpr uint8_t kSlotCount = 16;
 
 struct SlotDef {
   int dx;
   int dy;
   textdatum_t datum;
 };
-// Anchor points offset ~14 px from icon center (icon extends ~12 px).
+// Inner ring — ~14 px axis / ~12 px diagonal — icon extends ~12 px so the
+// leader is short and the tag reads as clearly attached.
 constexpr int kSlotAxis = 14;
-constexpr int kSlotDiag = 12;   // reduced so diagonal tags don't sit too far
+constexpr int kSlotDiag = 12;
+// Outer ring — ~26 px axis / ~22 px diagonal — used only when the inner
+// slot for this preferred direction is taken by another tag.
+constexpr int kSlotAxisFar = 26;
+constexpr int kSlotDiagFar = 22;
 const SlotDef kSlots[kSlotCount] = {
-    { kSlotDiag, -kSlotDiag, textdatum_t::bottom_left  },  // NE
-    { kSlotAxis,  0,          textdatum_t::middle_left  },  // E
-    { kSlotDiag,  kSlotDiag,  textdatum_t::top_left     },  // SE
-    { 0,          kSlotAxis,  textdatum_t::top_center   },  // S
-    {-kSlotDiag,  kSlotDiag,  textdatum_t::top_right    },  // SW
-    {-kSlotAxis,  0,          textdatum_t::middle_right },  // W
-    {-kSlotDiag, -kSlotDiag,  textdatum_t::bottom_right },  // NW
-    { 0,         -kSlotAxis,  textdatum_t::bottom_center},  // N
+    // Inner ring (slots 0..7) — preferred.
+    { kSlotDiag,    -kSlotDiag,    textdatum_t::bottom_left  },  // NE
+    { kSlotAxis,     0,             textdatum_t::middle_left  },  // E
+    { kSlotDiag,     kSlotDiag,    textdatum_t::top_left     },  // SE
+    { 0,             kSlotAxis,    textdatum_t::top_center   },  // S
+    {-kSlotDiag,     kSlotDiag,    textdatum_t::top_right    },  // SW
+    {-kSlotAxis,     0,             textdatum_t::middle_right },  // W
+    {-kSlotDiag,    -kSlotDiag,    textdatum_t::bottom_right },  // NW
+    { 0,            -kSlotAxis,    textdatum_t::bottom_center},  // N
+    // Outer ring (slots 8..15) — fallback when the inner slot is taken.
+    { kSlotDiagFar, -kSlotDiagFar, textdatum_t::bottom_left  },
+    { kSlotAxisFar,  0,             textdatum_t::middle_left  },
+    { kSlotDiagFar,  kSlotDiagFar, textdatum_t::top_left     },
+    { 0,             kSlotAxisFar, textdatum_t::top_center   },
+    {-kSlotDiagFar,  kSlotDiagFar, textdatum_t::top_right    },
+    {-kSlotAxisFar,  0,             textdatum_t::middle_right },
+    {-kSlotDiagFar, -kSlotDiagFar, textdatum_t::bottom_right },
+    { 0,            -kSlotAxisFar, textdatum_t::bottom_center},
 };
 
 // Per-aircraft hysteresis — remembered across frames, keyed by callsign.
@@ -523,7 +539,9 @@ void rememberSlot(const char* callsign, uint8_t slot) {
   }
   strncpy(m->callsign, callsign, sizeof(m->callsign) - 1);
   m->callsign[sizeof(m->callsign) - 1] = '\0';
-  m->slot = slot;
+  // Only remember the compass direction (0..7); the ring is re-picked each
+  // frame so hysteresis snaps back to the inner ring when it clears.
+  m->slot = slot % 8;
   m->last_used_ms = millis();
 }
 
@@ -667,21 +685,33 @@ bool tryPlaceSlot(uint8_t slot, int ax, int ay, const TagContent& c,
   return true;
 }
 
-// Find a good slot: prefer the callsign's last slot (hysteresis), then walk
-// the 8-way ring starting from that slot outward. Fall back to slot 0 with
-// the collision accepted.
+// Find a good slot. Preference order:
+//   1. The callsign's remembered slot (hysteresis — steady placement frame
+//      to frame).
+//   2. Neighboring inner-ring slots (compass step around from the
+//      preferred direction).
+//   3. All outer-ring slots (farther anchor, longer leader).
+//   4. If everything still collides, accept the remembered slot's overlap
+//      rather than dropping the tag entirely.
 bool pickTagPlacement(const services::adsb::Aircraft& p, int ax, int ay,
                       int px, int py, const TagContent& c,
                       TagPlacement* out) {
   const TagMemory* mem =
       (p.callsign[0] != '\0') ? findMemory(p.callsign) : nullptr;
-  uint8_t start = mem ? mem->slot : 0;
-  for (int step = 0; step < kSlotCount; ++step) {
-    const uint8_t slot = (start + step) % kSlotCount;
+  uint8_t start_inner = mem ? (mem->slot % 8) : 0;
+
+  // Walk the inner ring first.
+  for (int step = 0; step < 8; ++step) {
+    const uint8_t slot = (start_inner + step) % 8;
     if (tryPlaceSlot(slot, ax, ay, c, px, py, out)) return true;
   }
-  // Everything collides — fall back to the preferred slot even with overlap.
-  return tryPlaceSlot(start, ax, ay, c, px, py, out) ||
+  // Outer ring fallback, same starting direction.
+  for (int step = 0; step < 8; ++step) {
+    const uint8_t slot = 8 + ((start_inner + step) % 8);
+    if (tryPlaceSlot(slot, ax, ay, c, px, py, out)) return true;
+  }
+  // Last resort: overlap.
+  return tryPlaceSlot(start_inner, ax, ay, c, px, py, out) ||
          tryPlaceSlot(0, ax, ay, c, px, py, out);
 }
 

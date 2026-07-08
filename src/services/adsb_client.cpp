@@ -23,6 +23,7 @@ Aircraft s_aircraft[kMaxAircraft];
 size_t s_aircraft_count = 0;
 PollFn s_poll_fn = nullptr;
 unsigned long s_last_update_ms = 0;
+unsigned long s_fetch_count = 0;
 
 void pollNetwork() {
   if (s_poll_fn != nullptr) {
@@ -213,6 +214,8 @@ const Aircraft* aircraftList() { return s_aircraft; }
 
 unsigned long lastUpdateMs() { return s_last_update_ms; }
 
+unsigned long fetchCount() { return s_fetch_count; }
+
 bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
   const float dist_nm = kmToNauticalMiles(fetch_radius_km);
 
@@ -284,6 +287,7 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
 
   s_aircraft_count = n;
   s_last_update_ms = millis();
+  ++s_fetch_count;
   Serial.printf("adsb: %u aircraft\n", static_cast<unsigned>(n));
   return true;
 }

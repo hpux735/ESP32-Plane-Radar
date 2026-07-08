@@ -22,10 +22,15 @@ constexpr size_t kMaxAircraft = 64;
 size_t aircraftCount();
 const Aircraft* aircraftList();
 
-/** Time (millis()) of the most recent successful fetchUpdate. Used by the
- *  tag mode-toggle to align its flip to the midpoint between fetches so the
- *  text change doesn't race the position update. Returns 0 if none yet. */
+/** Time (millis()) of the most recent successful fetchUpdate. Returns 0 if
+ *  none yet. */
 unsigned long lastUpdateMs();
+
+/** Monotonically increasing counter of successful fetches. Tag rendering
+ *  uses this to alternate the second-line mode once per fetch (so each
+ *  mode gets one full fetch window and the mode swap coincides with the
+ *  position update rather than fighting it). */
+unsigned long fetchCount();
 
 /** Hook invoked during long HTTP I/O (e.g. wifiLoop). Optional. */
 using PollFn = void (*)();

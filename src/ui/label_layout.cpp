@@ -23,10 +23,11 @@ void add(int x, int y, int w, int h) {
   s_rects[s_count++] = {x, y, w, h};
 }
 
-// 2 px of "margin" so labels that are strictly touching (or a hair apart)
-// still register as colliding — antialiased characters bleed a pixel or two.
+// 3 px of "margin" so labels that are strictly touching (or a hair apart)
+// still register as colliding — antialiased characters bleed a pixel or two
+// and a tiny visible gap makes stacks read as distinct.
 bool intersects(int x, int y, int w, int h) {
-  constexpr int kMargin = 2;
+  constexpr int kMargin = 3;
   const int r = x + w + kMargin;
   const int b = y + h + kMargin;
   const int xl = x - kMargin;
