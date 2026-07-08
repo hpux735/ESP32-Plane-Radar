@@ -402,15 +402,30 @@ inline bool showTrend(float vs_fpm) {
   return std::fabs(vs_fpm) >= kTrendThresholdFpm;
 }
 
-// Tag mode alternation: flip ONCE per fetch, so each mode gets an entire
-// position-update window. The visual rhythm is:
-//   [fetch N]   → positions move, ALT shown for ~3 s
-//   [fetch N+1] → positions move, TYPE shown for ~3 s
-//   [fetch N+2] → positions move, ALT again, ...
-// This makes the mode change coincide with the position change instead of
-// racing it, which reads more naturally than a mid-cycle swap.
+// Tag mode alternation: flip ONCE per fetch cycle, but OFFSET by ~1.5 s
+// from the fetch. Position updates and mode swaps never coincide — each
+// event is its own visual beat, spaced ~1.5 s apart:
+//
+//   t = 0.0  fetch           (positions move, mode = A)
+//   t = 1.5  mode-swap  → B
+//   t = 3.0  fetch           (positions move, mode still B)
+//   t = 4.5  mode-swap  → A
+//   t = 6.0  fetch           (positions move, mode still A)
+//   ...
+//
+// So each mode gets a full 3 s dwell and stays put while ONE fetch happens
+// inside its window.
+constexpr unsigned long kModeToggleOffsetMs = 1500;
 inline bool tagShowsAltitude() {
-  return (services::adsb::fetchCount() & 1u) == 0;
+  static bool s_show_alt = true;
+  static unsigned long s_toggled_at_fetch = 0;
+  const unsigned long fc = services::adsb::fetchCount();
+  const unsigned long since = millis() - services::adsb::lastUpdateMs();
+  if (fc != s_toggled_at_fetch && since >= kModeToggleOffsetMs) {
+    s_show_alt = !s_show_alt;
+    s_toggled_at_fetch = fc;
+  }
+  return s_show_alt;
 }
 
 // A small filled triangle: apex UP for climb, apex DOWN for descent. Drawn
