@@ -13,25 +13,20 @@
 #include "services/adsb_client.h"
 #include "services/radar_location.h"
 
-// The ESP32 build embeds data/ui_font.vlw as objcopy symbols. On native we
-// don't have a valid VLW to embed. We need vlwDataLen() = end - start = 0
-// so displayFontInit() skips the load and s_vlw_loaded stays false — otherwise
-// a non-zero garbage length trips loadFont() into returning true, then
-// radar_display's label-metric calibration iterates against garbage font
-// metrics and produces a text size of ~5700 px which wipes the whole radar
-// on the first setTextColor(fg, bg) drawString.
+// The ESP32 build embeds data/ui_font.vlw via `board_build.embed_files`
+// which creates objcopy symbols. On native, embed the same bytes with
+// .incbin in inline asm — matches the exact linker symbols display_font.cpp
+// looks up via asm() labels ("_binary_data_ui_font_vlw_start" /
+// "_binary_data_ui_font_vlw_end" on Mach-O).
 //
-// C linkage: naming without the leading underscore lets Mach-O's automatic
-// underscore prepend produce the `_binary_...` linker symbols the extern in
-// display_font.cpp expects (via asm() label). `extern` on the declaration
-// forces external linkage (file-scope `const` would otherwise be internal).
-// The .set assembly directive aliases _end to _start so their difference is 0.
-extern "C" {
-extern const uint8_t binary_data_ui_font_vlw_start[];
-const uint8_t binary_data_ui_font_vlw_start[] = {0};
-}
-__asm__(".globl _binary_data_ui_font_vlw_end\n"
-        ".set _binary_data_ui_font_vlw_end, _binary_data_ui_font_vlw_start\n");
+// The path is relative to the PlatformIO build cwd (repo root).
+__asm__(
+    ".section __DATA,__const\n"
+    ".globl _binary_data_ui_font_vlw_start\n"
+    "_binary_data_ui_font_vlw_start:\n"
+    ".incbin \"data/ui_font.vlw\"\n"
+    ".globl _binary_data_ui_font_vlw_end\n"
+    "_binary_data_ui_font_vlw_end:\n");
 
 namespace services::adsb {
 

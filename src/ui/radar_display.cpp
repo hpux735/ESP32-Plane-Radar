@@ -11,6 +11,7 @@
 #include "hardware/display_font.h"
 #include "services/adsb_client.h"
 #include "services/radar_location.h"
+#include "ui/label_layout.h"
 #include "ui/radar_range.h"
 #include "ui/radar_theme.h"
 #include "ui/runway_overlay.h"
@@ -142,13 +143,10 @@ void initLabelMetrics() {
   s_scale_label_max_w = 0;
   char label[12];
   for (size_t i = 0; i < radar::kRangePresetCount; ++i) {
-    for (bool miles : {false, true}) {
-      radar::formatRing3Label(label, sizeof(label), radar::kRangePresets[i].ring3_km,
-                              miles);
-      const int w = tft.textWidth(label);
-      if (w > s_scale_label_max_w) {
-        s_scale_label_max_w = w;
-      }
+    radar::formatRing3Label(label, sizeof(label), radar::kRangePresets[i].ring3_km);
+    const int w = tft.textWidth(label);
+    if (w > s_scale_label_max_w) {
+      s_scale_label_max_w = w;
     }
   }
 
@@ -559,29 +557,35 @@ void applyScaleStyle() {
   }
 }
 
+// Given a datum, return (dx, dy) from the anchor point to the top-left
+// corner of the resulting text box. Used for fill-rect + occupancy tracking.
+void datumTopLeftOffset(textdatum_t d, int tw, int th, int* dx, int* dy) {
+  *dx = 0;
+  *dy = 0;
+  switch (d) {
+    case textdatum_t::top_center:    *dx = -tw / 2; break;
+    case textdatum_t::top_right:     *dx = -tw;     break;
+    case textdatum_t::middle_left:                  *dy = -th / 2; break;
+    case textdatum_t::middle_center: *dx = -tw / 2; *dy = -th / 2; break;
+    case textdatum_t::middle_right:  *dx = -tw;     *dy = -th / 2; break;
+    case textdatum_t::bottom_left:                  *dy = -th;     break;
+    case textdatum_t::bottom_center: *dx = -tw / 2; *dy = -th;     break;
+    case textdatum_t::bottom_right:  *dx = -tw;     *dy = -th;     break;
+    default: break;
+  }
+}
+
 void drawCardinalLabel(const char* text, int x, int y, textdatum_t datum) {
   applyCardinalStyle();
+  const int tw = s_draw->textWidth(text);
+  const int th = s_draw->fontHeight();
+  int ox = 0;
+  int oy = 0;
+  datumTopLeftOffset(datum, tw, th, &ox, &oy);
   s_draw->setTextDatum(datum);
   s_draw->setTextColor(radar::kColorLabel, radar::kColorBackground);
   s_draw->drawString(text, x, y);
-}
-
-void drawScaleLabelWithBackground(const char* text, int x, int y) {
-  applyScaleStyle();
-  s_draw->setTextDatum(textdatum_t::middle_right);
-
-  const int tw = s_draw->textWidth(text);
-  const int th = s_draw->fontHeight();
-  constexpr int kPadX = 3;
-  constexpr int kPadY = 2;
-
-  const int left = x - tw - kPadX;
-  const int top = y - th / 2 - kPadY;
-
-  s_draw->fillRect(left, top, tw + kPadX * 2, th + kPadY * 2,
-                   radar::kColorBackground);
-  s_draw->setTextColor(radar::kColorGrid, radar::kColorBackground);
-  s_draw->drawString(text, x, y);
+  labels::add(x + ox, y + oy, tw, th);
 }
 
 void drawGridRing(int cx, int cy, int r, uint16_t color) {
@@ -625,19 +629,85 @@ void drawCardinalLabels() {
   drawCardinalLabel("E", edge, cy, textdatum_t::middle_right);
 }
 
-int scaleLabelAnchorX(int cx, int outer_radius) {
-  return cx + outer_radius - radar::kScaleGapFromOuterRing;
-}
-
+// Scale label anchored ON the outer ring, positioned so its text box sits
+// just inside the ring line. If the default E-spoke position collides with
+// another label (cardinal E, airport labels), walk radially around the
+// ring — preferring positions close to and north-of the E spoke — until a
+// clear spot is found. Fallback if the whole ring is crowded: draw at E and
+// accept overlay by the fixed cardinal E.
 void drawScaleLabel(int cx, int cy, int outer_radius) {
   char scale_label[12];
   radar::formatCurrentRing3Label(scale_label, sizeof(scale_label));
-  drawScaleLabelWithBackground(scale_label,
-                               scaleLabelAnchorX(cx, outer_radius), cy);
+
+  applyScaleStyle();
+  constexpr int kPadX = 3;
+  constexpr int kPadY = 2;
+  const int tw = s_draw->textWidth(scale_label);
+  const int th = s_draw->fontHeight();
+  const int box_w = tw + kPadX * 2;
+  const int box_h = th + kPadY * 2;
+
+  // Bounding half-radius of the text box so the whole box fits inside the
+  // outer ring at any angle.
+  const float half_diag =
+      0.5f * std::sqrt(static_cast<float>(box_w * box_w + box_h * box_h));
+  const float inset = half_diag + radar::kScaleGapFromOuterRing;
+  const float effective_r = static_cast<float>(outer_radius) - inset;
+  constexpr float kPi = 3.14159265f;
+
+  auto anchorAt = [&](int theta_deg, int* out_x, int* out_y) {
+    const float rad = theta_deg * kPi / 180.0f;
+    *out_x = cx + static_cast<int>(std::lroundf(effective_r * std::sin(rad)));
+    *out_y = cy - static_cast<int>(std::lroundf(effective_r * std::cos(rad)));
+  };
+
+  auto trial = [&](int theta_deg, int* out_x, int* out_y) -> bool {
+    int ax = 0;
+    int ay = 0;
+    anchorAt(theta_deg, &ax, &ay);
+    const int left = ax - box_w / 2;
+    const int top = ay - box_h / 2;
+    if (labels::intersects(left, top, box_w, box_h)) return false;
+    *out_x = ax;
+    *out_y = ay;
+    return true;
+  };
+
+  int px = 0;
+  int py = 0;
+  bool found = false;
+  // Compass angles: 90° = E. Walk N-preferred: 90, 85, 95, 80, 100, 75, ...
+  // up to ±90° from E (i.e. straight N or straight S) then wrap further.
+  constexpr int kStepDeg = 5;
+  for (int delta = 0; delta <= 90 && !found; delta += kStepDeg) {
+    if (trial(90 - delta, &px, &py)) { found = true; break; }
+    if (delta != 0 && trial(90 + delta, &px, &py)) { found = true; break; }
+  }
+  if (!found) {
+    // Continue past N/S into the west half.
+    for (int delta = 95; delta <= 180 && !found; delta += kStepDeg) {
+      if (trial(90 - delta, &px, &py)) { found = true; break; }
+      if (trial(90 + delta, &px, &py)) { found = true; break; }
+    }
+  }
+  if (!found) {
+    // Whole ring is crowded — fall back to the E spoke, will be overlaid by
+    // the cardinal E label. Better than dropping the range label entirely.
+    anchorAt(90, &px, &py);
+  }
+
+  const int left = px - box_w / 2;
+  const int top = py - box_h / 2;
+  s_draw->fillRect(left, top, box_w, box_h, radar::kColorBackground);
+  s_draw->setTextDatum(textdatum_t::middle_center);
+  s_draw->setTextColor(radar::kColorGrid, radar::kColorBackground);
+  s_draw->drawString(scale_label, px, py);
+  labels::add(left, top, box_w, box_h);
 }
 
 template <typename Gfx>
 void drawStaticGrid(Gfx& gfx) {
+  labels::reset();
   initLabelMetrics();
   const DrawScope scope(gfx);
   displayFontEnsureLoaded(gfx);
@@ -649,9 +719,11 @@ void drawStaticGrid(Gfx& gfx) {
   drawRings(cx, cy, grid_r);
   drawCrosshairs(cx, cy, grid_r, radar::kColorGrid);
   initPalette();
+  // Order matters: cardinals + airports register their bounding rects with
+  // labels::, then the scale label dodges around them.
+  drawCardinalLabels();
   runway::drawLargeAirportRunways(gfx);
   drawCenterDot(cx, cy);
-  drawCardinalLabels();
   drawScaleLabel(cx, cy, grid_r);
   gfx.setTextDatum(textdatum_t::top_left);
 }

@@ -8,6 +8,7 @@
 #include "data/large_airports.h"
 #include "hardware/display_font.h"
 #include "services/radar_location.h"
+#include "ui/label_layout.h"
 #include "ui/radar_range.h"
 #include "ui/radar_theme.h"
 
@@ -159,20 +160,46 @@ bool segmentIntersectsDisc(int x0, int y0, int x1, int y1) {
   return (t0 >= 0.0f && t0 <= 1.0f) || (t1 >= 0.0f && t1 <= 1.0f);
 }
 
-void drawBoldRunwayLabel(lgfx::LGFXBase& gfx, const char* ident, int mx, int my) {
+// Convert a text datum to the (dx, dy) offset from the anchor point to the
+// top-left corner of the resulting text box. Used to compute the fill rect
+// and to register the label with the layout registry.
+void datumOffset(textdatum_t datum, int tw, int th, int* dx, int* dy) {
+  *dx = 0;
+  *dy = 0;
+  switch (datum) {
+    case textdatum_t::top_center:    *dx = -tw / 2; break;
+    case textdatum_t::top_right:     *dx = -tw;     break;
+    case textdatum_t::middle_left:                  *dy = -th / 2; break;
+    case textdatum_t::middle_center: *dx = -tw / 2; *dy = -th / 2; break;
+    case textdatum_t::middle_right:  *dx = -tw;     *dy = -th / 2; break;
+    case textdatum_t::bottom_left:                  *dy = -th;     break;
+    case textdatum_t::bottom_center: *dx = -tw / 2; *dy = -th;     break;
+    case textdatum_t::bottom_right:  *dx = -tw;     *dy = -th;     break;
+    default: break;  // top_left: (0, 0)
+  }
+}
+
+void drawBoldRunwayLabel(lgfx::LGFXBase& gfx, const char* ident, int mx, int my,
+                         textdatum_t datum) {
   const int tw = gfx.textWidth(ident);
   const int th = gfx.fontHeight();
   constexpr int kPadX = 2;
   constexpr int kPadY = 1;
 
-  gfx.setTextDatum(textdatum_t::bottom_center);
-  const int left = mx - tw / 2 - kPadX;
-  const int top = my - th - kPadY;
-  gfx.fillRect(left, top, tw + kPadX * 2, th + kPadY, radar::kColorBackground);
+  int ox = 0;
+  int oy = 0;
+  datumOffset(datum, tw, th, &ox, &oy);
+  const int left = mx + ox - kPadX;
+  const int top = my + oy - kPadY;
+  const int w = tw + kPadX * 2;
+  const int h = th + kPadY * 2;
+  gfx.fillRect(left, top, w, h, radar::kColorBackground);
+  gfx.setTextDatum(datum);
   gfx.setTextColor(radar::kColorRunwayLabel, radar::kColorBackground);
   gfx.drawString(ident, mx - 1, my);
   gfx.drawString(ident, mx + 1, my);
   gfx.drawString(ident, mx, my);
+  labels::add(left, top, w, h);
 }
 
 bool drawRunwayLine(lgfx::LGFXBase& gfx, const data::large_airports::Runway& rw) {
@@ -230,6 +257,12 @@ void clipPointOntoOuterRing(int* x, int* y) {
   *y = cy + static_cast<int>(lroundf(static_cast<float>(dy) * scale));
 }
 
+// Place label vertically offset from the marker on the side further from
+// center. This keeps text off horizontal runway lines (major runways are
+// often near-E/W) and prevents E/W-side airports from having their labels
+// pushed off-screen by a full outward-radial datum.
+//   Marker in top half (dy < 0)  → label ABOVE marker → bottom_center datum
+//   Marker in bottom half (dy > 0) → label BELOW marker → top_center datum
 void drawAirportLabel(lgfx::LGFXBase& gfx,
                       const data::large_airports::Airport& ap) {
   int ax = 0;
@@ -237,10 +270,14 @@ void drawAirportLabel(lgfx::LGFXBase& gfx,
   latLonToScreen(e7ToDeg(ap.lat_e7), e7ToDeg(ap.lon_e7), &ax, &ay);
   clipPointOntoOuterRing(&ax, &ay);
 
-  int lx = 0;
-  int ly = 0;
-  offsetLabelFromCenter(ax, ay, &lx, &ly);
-  drawBoldRunwayLabel(gfx, ap.ident, lx, ly);
+  const int dy = ay - radar::kCenterY;
+  const int gap = radar::kRunwayLabelGapPx + 2;  // extra room off the runway
+  const bool label_below = (dy >= 0);
+  const int label_x = ax;
+  const int label_y = label_below ? (ay + gap) : (ay - gap);
+  const textdatum_t datum =
+      label_below ? textdatum_t::top_center : textdatum_t::bottom_center;
+  drawBoldRunwayLabel(gfx, ap.ident, label_x, label_y, datum);
 }
 
 }  // namespace

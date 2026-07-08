@@ -76,10 +76,6 @@ WiFiManagerParameter s_param_lat("radar_lat", "Latitude (deg)", "0",
 WiFiManagerParameter s_param_lon("radar_lon", "Longitude (deg)", "0",
                                 kCoordParamLen, kCoordInputAttrs);
 
-char s_miles_checkbox_attrs[32] = "type=\"checkbox\"";
-WiFiManagerParameter s_param_miles("use_miles", "Display distances in miles", "T", 2,
-                                   s_miles_checkbox_attrs, WFM_LABEL_AFTER);
-
 char s_runways_checkbox_attrs[32] = "type=\"checkbox\"";
 WiFiManagerParameter s_param_runways("show_runways", "Show airport runways", "T", 2,
                                      s_runways_checkbox_attrs, WFM_LABEL_AFTER);
@@ -91,9 +87,6 @@ void refreshPortalParamDefaults() {
   snprintf(lon_buf, sizeof(lon_buf), "%.6f", services::location::lon());
   s_param_lat.setValue(lat_buf, kCoordParamLen);
   s_param_lon.setValue(lon_buf, kCoordParamLen);
-  snprintf(s_miles_checkbox_attrs, sizeof(s_miles_checkbox_attrs), "type=\"checkbox\"%s",
-           ui::radar::useMiles() ? " checked" : "");
-  s_param_miles.setValue("T", 2);
   snprintf(s_runways_checkbox_attrs, sizeof(s_runways_checkbox_attrs),
            "type=\"checkbox\"%s", ui::radar::showRunways() ? " checked" : "");
   s_param_runways.setValue("T", 2);
@@ -104,7 +97,6 @@ void onPortalParamsSaved() {
                                            s_param_lon.getValue())) {
     Serial.println("Invalid lat/lon in portal — keeping previous location");
   }
-  ui::radar::saveMilesFromPortal(s_param_miles.getValue());
   ui::radar::saveRunwaysFromPortal(s_param_runways.getValue());
 }
 
@@ -112,7 +104,6 @@ void attachPortalParams(WiFiManager& wm) {
   refreshPortalParamDefaults();
   wm.addParameter(&s_param_lat);
   wm.addParameter(&s_param_lon);
-  wm.addParameter(&s_param_miles);
   wm.addParameter(&s_param_runways);
   wm.setSaveParamsCallback(onPortalParamsSaved);
 }
