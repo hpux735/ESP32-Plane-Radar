@@ -85,13 +85,12 @@ void saveRunwaysFromPortal(const char* checkbox_value) {
   Serial.printf("Runway overlay: %s\n", s_show_runways ? "on" : "off");
 }
 
-void formatRing3Label(char* buf, size_t len, float ring3_km) {
-  const int nm = static_cast<int>(lroundf(ring3_km / kKmPerNm));
+void formatRangeLabel(char* buf, size_t len, int nm) {
   snprintf(buf, len, "%dnm", nm);
 }
 
-void formatCurrentRing3Label(char* buf, size_t len) {
-  formatRing3Label(buf, len, rangeCurrent().ring3_km);
+void formatCurrentRangeLabel(char* buf, size_t len) {
+  formatRangeLabel(buf, len, rangeCurrent().nm);
 }
 
 void unitsReset() {

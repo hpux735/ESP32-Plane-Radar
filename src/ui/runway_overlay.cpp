@@ -179,8 +179,8 @@ void datumOffset(textdatum_t datum, int tw, int th, int* dx, int* dy) {
   }
 }
 
-void drawBoldRunwayLabel(lgfx::LGFXBase& gfx, const char* ident, int mx, int my,
-                         textdatum_t datum) {
+void drawAirportIdentLabel(lgfx::LGFXBase& gfx, const char* ident, int mx,
+                           int my, textdatum_t datum) {
   const int tw = gfx.textWidth(ident);
   const int th = gfx.fontHeight();
   constexpr int kPadX = 2;
@@ -196,8 +196,6 @@ void drawBoldRunwayLabel(lgfx::LGFXBase& gfx, const char* ident, int mx, int my,
   gfx.fillRect(left, top, w, h, radar::kColorBackground);
   gfx.setTextDatum(datum);
   gfx.setTextColor(radar::kColorRunwayLabel, radar::kColorBackground);
-  gfx.drawString(ident, mx - 1, my);
-  gfx.drawString(ident, mx + 1, my);
   gfx.drawString(ident, mx, my);
   labels::add(left, top, w, h);
 }
@@ -263,6 +261,10 @@ void clipPointOntoOuterRing(int* x, int* y) {
 // pushed off-screen by a full outward-radial datum.
 //   Marker in top half (dy < 0)  → label ABOVE marker → bottom_center datum
 //   Marker in bottom half (dy > 0) → label BELOW marker → top_center datum
+// Prefer placement AWAY from center (above marker if marker is in top half,
+// below if bottom half). If that would collide with a previously-drawn
+// label (cardinal or another airport), flip to the other side. Fallback:
+// use preferred side and accept overlay.
 void drawAirportLabel(lgfx::LGFXBase& gfx,
                       const data::large_airports::Airport& ap) {
   int ax = 0;
@@ -271,13 +273,33 @@ void drawAirportLabel(lgfx::LGFXBase& gfx,
   clipPointOntoOuterRing(&ax, &ay);
 
   const int dy = ay - radar::kCenterY;
-  const int gap = radar::kRunwayLabelGapPx + 2;  // extra room off the runway
-  const bool label_below = (dy >= 0);
-  const int label_x = ax;
-  const int label_y = label_below ? (ay + gap) : (ay - gap);
+  constexpr int kGap = 12;
+  const int tw = gfx.textWidth(ap.ident);
+  const int th = gfx.fontHeight();
+  const int box_w = tw + 4;   // matches drawAirportIdentLabel padding
+  const int box_h = th + 2;
+
+  auto rectFor = [&](bool below, int* rx, int* ry) {
+    // top-left of text box for the given orientation
+    *rx = ax - box_w / 2;
+    *ry = below ? (ay + kGap - 1) : (ay - kGap - th - 1);
+  };
+
+  const bool prefer_below = (dy >= 0);
+  int rx = 0;
+  int ry = 0;
+  rectFor(prefer_below, &rx, &ry);
+  bool below = prefer_below;
+  if (labels::intersects(rx, ry, box_w, box_h)) {
+    int rx2 = 0, ry2 = 0;
+    rectFor(!prefer_below, &rx2, &ry2);
+    if (!labels::intersects(rx2, ry2, box_w, box_h)) below = !prefer_below;
+  }
+
+  const int label_y = below ? (ay + kGap) : (ay - kGap);
   const textdatum_t datum =
-      label_below ? textdatum_t::top_center : textdatum_t::bottom_center;
-  drawBoldRunwayLabel(gfx, ap.ident, label_x, label_y, datum);
+      below ? textdatum_t::top_center : textdatum_t::bottom_center;
+  drawAirportIdentLabel(gfx, ap.ident, ax, label_y, datum);
 }
 
 }  // namespace

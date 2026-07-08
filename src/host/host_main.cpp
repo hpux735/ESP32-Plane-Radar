@@ -58,7 +58,7 @@ void saveScreenshot(const char* path) {
 void onRangeTap() {
   ui::radar::rangeNext();
   char label[12];
-  ui::radar::formatCurrentRing3Label(label, sizeof(label));
+  ui::radar::formatCurrentRangeLabel(label, sizeof(label));
   std::printf("Range: %s (outer ~%.0f km)\n", label,
               ui::radar::rangeCurrent().outer_km);
   ui::radarDisplayDraw();
@@ -113,6 +113,10 @@ static int user_func(bool* running) {
 }
 
 int main(int, char**) {
+  // Ask SDL for smooth upscaling. Panel_sdl scales the 240x240 framebuffer
+  // 3x for display; without this, nearest-neighbor makes anti-aliased text
+  // look jagged.
+  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
   return lgfx::Panel_sdl::main(user_func);
 }
 

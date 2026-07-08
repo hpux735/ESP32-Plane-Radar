@@ -33,7 +33,7 @@ void showRadarIfConnected() {
 void onRangeTap() {
   ui::radar::rangeNext();
   char range_label[12];
-  ui::radar::formatCurrentRing3Label(range_label, sizeof(range_label));
+  ui::radar::formatCurrentRangeLabel(range_label, sizeof(range_label));
   Serial.printf("Range: %s (outer ~%.0f km)\n", range_label,
                 ui::radar::rangeCurrent().outer_km);
 

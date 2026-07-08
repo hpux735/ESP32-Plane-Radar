@@ -143,7 +143,7 @@ void initLabelMetrics() {
   s_scale_label_max_w = 0;
   char label[12];
   for (size_t i = 0; i < radar::kRangePresetCount; ++i) {
-    radar::formatRing3Label(label, sizeof(label), radar::kRangePresets[i].ring3_km);
+    radar::formatRangeLabel(label, sizeof(label), radar::kRangePresets[i].nm);
     const int w = tft.textWidth(label);
     if (w > s_scale_label_max_w) {
       s_scale_label_max_w = w;
@@ -637,28 +637,35 @@ void drawCardinalLabels() {
 // accept overlay by the fixed cardinal E.
 void drawScaleLabel(int cx, int cy, int outer_radius) {
   char scale_label[12];
-  radar::formatCurrentRing3Label(scale_label, sizeof(scale_label));
+  radar::formatCurrentRangeLabel(scale_label, sizeof(scale_label));
 
   applyScaleStyle();
-  constexpr int kPadX = 3;
-  constexpr int kPadY = 2;
   const int tw = s_draw->textWidth(scale_label);
   const int th = s_draw->fontHeight();
-  const int box_w = tw + kPadX * 2;
-  const int box_h = th + kPadY * 2;
-
-  // Bounding half-radius of the text box so the whole box fits inside the
-  // outer ring at any angle.
-  const float half_diag =
-      0.5f * std::sqrt(static_cast<float>(box_w * box_w + box_h * box_h));
-  const float inset = half_diag + radar::kScaleGapFromOuterRing;
-  const float effective_r = static_cast<float>(outer_radius) - inset;
+  const int box_w = tw + 2;  // 1 px margin either side for collision check
+  const int box_h = th + 2;
   constexpr float kPi = 3.14159265f;
 
+  // Text CENTER sits on the outer ring (radius = outer_radius). At E where
+  // the ring hugs the screen edge, clamp anchor inward so text stays within
+  // 240×240. Elsewhere the text visually straddles the ring line.
   auto anchorAt = [&](int theta_deg, int* out_x, int* out_y) {
     const float rad = theta_deg * kPi / 180.0f;
-    *out_x = cx + static_cast<int>(std::lroundf(effective_r * std::sin(rad)));
-    *out_y = cy - static_cast<int>(std::lroundf(effective_r * std::cos(rad)));
+    const float sin_t = std::sin(rad);
+    const float cos_t = std::cos(rad);
+    const float er = static_cast<float>(outer_radius);
+    int ax = cx + static_cast<int>(std::lroundf(er * sin_t));
+    int ay = cy - static_cast<int>(std::lroundf(er * cos_t));
+    const int min_x = box_w / 2;
+    const int max_x = radar::kSize - 1 - box_w / 2;
+    const int min_y = box_h / 2;
+    const int max_y = radar::kSize - 1 - box_h / 2;
+    if (ax < min_x) ax = min_x;
+    if (ax > max_x) ax = max_x;
+    if (ay < min_y) ay = min_y;
+    if (ay > max_y) ay = max_y;
+    *out_x = ax;
+    *out_y = ay;
   };
 
   auto trial = [&](int theta_deg, int* out_x, int* out_y) -> bool {
@@ -698,9 +705,11 @@ void drawScaleLabel(int cx, int cy, int outer_radius) {
 
   const int left = px - box_w / 2;
   const int top = py - box_h / 2;
-  s_draw->fillRect(left, top, box_w, box_h, radar::kColorBackground);
+  // No fillRect background — text sits over the ring line with transparent
+  // bg. Antialiased characters read cleanly over the thin ring stroke and
+  // don't produce a dark box crossing the ring.
   s_draw->setTextDatum(textdatum_t::middle_center);
-  s_draw->setTextColor(radar::kColorGrid, radar::kColorBackground);
+  s_draw->setTextColor(radar::kColorGrid);
   s_draw->drawString(scale_label, px, py);
   labels::add(left, top, box_w, box_h);
 }

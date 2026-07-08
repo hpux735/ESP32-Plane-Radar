@@ -1,6 +1,7 @@
 #include "ui/label_layout.h"
 
 #include <cstddef>
+#include <cstdio>
 
 namespace ui::labels {
 namespace {
@@ -22,12 +23,17 @@ void add(int x, int y, int w, int h) {
   s_rects[s_count++] = {x, y, w, h};
 }
 
+// 2 px of "margin" so labels that are strictly touching (or a hair apart)
+// still register as colliding — antialiased characters bleed a pixel or two.
 bool intersects(int x, int y, int w, int h) {
-  const int r = x + w;
-  const int b = y + h;
+  constexpr int kMargin = 2;
+  const int r = x + w + kMargin;
+  const int b = y + h + kMargin;
+  const int xl = x - kMargin;
+  const int yt = y - kMargin;
   for (size_t i = 0; i < s_count; ++i) {
     const auto& o = s_rects[i];
-    if (o.x < r && x < o.x + o.w && o.y < b && y < o.y + o.h) {
+    if (o.x < r && xl < o.x + o.w && o.y < b && yt < o.y + o.h) {
       return true;
     }
   }
