@@ -22,6 +22,7 @@ constexpr unsigned long kRequestTimeoutMs = 10000;
 Aircraft s_aircraft[kMaxAircraft];
 size_t s_aircraft_count = 0;
 PollFn s_poll_fn = nullptr;
+unsigned long s_last_update_ms = 0;
 
 void pollNetwork() {
   if (s_poll_fn != nullptr) {
@@ -187,7 +188,13 @@ float pickVerticalRate(const JsonObject& plane) {
 }
 
 void fillTagFields(Aircraft* ac, const JsonObject& plane) {
+  // Callsign preference: flight (dispatch callsign, e.g. UAL1234) →
+  // registration / tail number (e.g. N12345) → hex ICAO transponder code
+  // as last resort. adsb.fi reports registration in "r".
   copyJsonStringTrimmed(plane, "flight", ac->callsign, sizeof(ac->callsign));
+  if (ac->callsign[0] == '\0') {
+    copyJsonStringTrimmed(plane, "r", ac->callsign, sizeof(ac->callsign));
+  }
   if (ac->callsign[0] == '\0') {
     copyJsonStringTrimmed(plane, "hex", ac->callsign, sizeof(ac->callsign));
   }
@@ -203,6 +210,8 @@ void setPollFn(PollFn fn) { s_poll_fn = fn; }
 size_t aircraftCount() { return s_aircraft_count; }
 
 const Aircraft* aircraftList() { return s_aircraft; }
+
+unsigned long lastUpdateMs() { return s_last_update_ms; }
 
 bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
   const float dist_nm = kmToNauticalMiles(fetch_radius_km);
@@ -274,6 +283,7 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
   }
 
   s_aircraft_count = n;
+  s_last_update_ms = millis();
   Serial.printf("adsb: %u aircraft\n", static_cast<unsigned>(n));
   return true;
 }

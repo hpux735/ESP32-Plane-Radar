@@ -402,11 +402,16 @@ inline bool showTrend(float vs_fpm) {
   return std::fabs(vs_fpm) >= kTrendThresholdFpm;
 }
 
-// One global toggle for altitude vs type display, in sync across all tags.
-// 4 s cadence — roughly one radar sweep on legacy scopes.
-constexpr unsigned long kTagAltPhaseMs = 4000;
+// Tag mode alternation: sync to the ADS-B fetch cadence so the text swap
+// happens halfway between position updates. That way the two visual events
+// — new positions (on fetch) and new mode (mid-cycle) — don't race each
+// other. Assumes the fetch loop is ~3 s (see kAdsbFetchIntervalMs). The
+// half-window is short enough that if the actual interval is 2 or 4 s the
+// pattern is still "one flip per cycle at roughly midway".
+constexpr unsigned long kTagSweepHalfMs = 1500;
 inline bool tagShowsAltitude() {
-  return (millis() / kTagAltPhaseMs) % 2 == 0;
+  const unsigned long since = millis() - services::adsb::lastUpdateMs();
+  return since < kTagSweepHalfMs;  // ALT right after fetch, TYPE mid-cycle
 }
 
 // A small filled triangle: apex UP for climb, apex DOWN for descent. Drawn
@@ -565,15 +570,15 @@ void predictScreenPos(const services::adsb::Aircraft& p, int cur_x, int cur_y,
 enum class TagAlign : uint8_t { Left, Right, Center };
 
 TagAlign alignFromDatum(textdatum_t d) {
+  // *_right datums: tag hangs on the LEFT of the aircraft, so lines must be
+  // right-aligned to keep line 2 flush with the leader-side edge.
+  // Everything else (including vertical *_center slots) uses left-align for
+  // visual consistency with the *_left tags.
   switch (d) {
     case textdatum_t::middle_right:
     case textdatum_t::top_right:
     case textdatum_t::bottom_right:
       return TagAlign::Right;
-    case textdatum_t::top_center:
-    case textdatum_t::middle_center:
-    case textdatum_t::bottom_center:
-      return TagAlign::Center;
     default:
       return TagAlign::Left;
   }

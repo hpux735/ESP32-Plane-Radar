@@ -45,9 +45,11 @@ namespace services::adsb {
 static Aircraft s_aircraft[kMaxAircraft];
 static size_t s_count = 0;
 static PollFn s_poll = nullptr;
+static unsigned long s_last_update_ms = 0;
 
 size_t aircraftCount() { return s_count; }
 const Aircraft* aircraftList() { return s_aircraft; }
+unsigned long lastUpdateMs() { return s_last_update_ms; }
 
 void setPollFn(PollFn fn) { s_poll = fn; }
 
@@ -174,8 +176,13 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
     s_aircraft[n].nose_deg = pickNoseHeading(plane);
     s_aircraft[n].track_deg = pickTrackHeading(plane);
     s_aircraft[n].gs_knots = pickGroundSpeed(plane);
+    // Callsign: flight (dispatch) → registration / tail → hex transponder.
     copyStringTrimmed(plane, "flight", s_aircraft[n].callsign,
                       sizeof(s_aircraft[n].callsign));
+    if (s_aircraft[n].callsign[0] == '\0') {
+      copyStringTrimmed(plane, "r", s_aircraft[n].callsign,
+                        sizeof(s_aircraft[n].callsign));
+    }
     if (s_aircraft[n].callsign[0] == '\0') {
       copyStringTrimmed(plane, "hex", s_aircraft[n].callsign,
                         sizeof(s_aircraft[n].callsign));
@@ -187,6 +194,7 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
     ++n;
   }
   s_count = n;
+  s_last_update_ms = millis();
   std::printf("adsb: %zu aircraft in %.1f nm\n", n, nm);
   return true;
 }
