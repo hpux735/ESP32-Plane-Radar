@@ -83,10 +83,15 @@ void setup() {
   services::location::init();
   ui::radar::rangeInit();
   ui::radarDisplayDraw();
+  // Kick off an initial fetch so the first frame isn't empty.
+  services::adsb::fetchUpdate(services::location::lat(),
+                              services::location::lon(),
+                              ui::radar::fetchRadiusKm());
 }
 
 void loop() {
   static unsigned long last_shot_ms = 0;
+  static unsigned long last_adsb_ms = 0;
   bootButtonPollLongPress();
   if (bootButtonConsumeTap()) {
     onRangeTap();
@@ -95,8 +100,16 @@ void loop() {
     saveScreenshot(kShotPath);
     std::printf("screenshot: %s\n", kShotPath);
   }
-  ui::radarDisplayRefreshAircraft();
+
   const unsigned long now = millis();
+  // adsb.fi's public rate limit is 1 req/s; matching the firmware's 3 s poll.
+  if (now - last_adsb_ms >= 3000) {
+    last_adsb_ms = now;
+    services::adsb::fetchUpdate(services::location::lat(),
+                                services::location::lon(),
+                                ui::radar::fetchRadiusKm());
+  }
+  ui::radarDisplayRefreshAircraft();
   if (now - last_shot_ms >= kAutoShotIntervalMs) {
     last_shot_ms = now;
     saveScreenshot(kShotPath);

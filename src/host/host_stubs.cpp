@@ -8,8 +8,14 @@
 #include <lgfx/v1/platforms/sdl/Panel_sdl.hpp>
 #include <lgfx/v1/platforms/sdl/common.hpp>
 
-#include <cstdint>
+#include <ArduinoJson.h>
 
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <string>
+
+#include "config.h"
 #include "services/adsb_client.h"
 #include "services/radar_location.h"
 
@@ -30,18 +36,154 @@ __asm__(
 
 namespace services::adsb {
 
-static Aircraft s_none[1] = {};
+// Native ADS-B fetch: shells out to /usr/bin/curl (universally available on
+// macOS/Linux) and parses adsb.fi's response with ArduinoJson. Same JSON
+// schema handling as src/services/adsb_client.cpp — deliberate duplication
+// so the native env doesn't need HTTPClient/WiFiClientSecure shims.
+
+static Aircraft s_aircraft[kMaxAircraft];
 static size_t s_count = 0;
 static PollFn s_poll = nullptr;
 
 size_t aircraftCount() { return s_count; }
-const Aircraft* aircraftList() { return s_none; }
+const Aircraft* aircraftList() { return s_aircraft; }
 
 void setPollFn(PollFn fn) { s_poll = fn; }
 
-bool fetchUpdate(double, double, float) {
-  // TODO(M1.5): call adsb.fi via libcurl and populate s_none.
+namespace {
+
+constexpr float kKmPerNm = 1.852f;
+
+bool readJsonFloat(JsonObjectConst obj, const char* key, float* out) {
+  if (obj[key].is<float>() || obj[key].is<double>() || obj[key].is<int>()) {
+    *out = obj[key].as<float>();
+    return true;
+  }
   return false;
+}
+
+float pickNoseHeading(JsonObjectConst p) {
+  float v = 0.0f;
+  if (readJsonFloat(p, "true_heading", &v)) return v;
+  if (readJsonFloat(p, "mag_heading", &v)) return v;
+  if (readJsonFloat(p, "track", &v)) return v;
+  if (readJsonFloat(p, "dir", &v)) return v;
+  return 0.0f;
+}
+
+float pickTrackHeading(JsonObjectConst p) {
+  float v = 0.0f;
+  if (readJsonFloat(p, "track", &v)) return v;
+  if (readJsonFloat(p, "true_heading", &v)) return v;
+  if (readJsonFloat(p, "mag_heading", &v)) return v;
+  if (readJsonFloat(p, "dir", &v)) return v;
+  return 0.0f;
+}
+
+float pickGroundSpeed(JsonObjectConst p) {
+  float v = 0.0f;
+  if (readJsonFloat(p, "gs", &v)) return v;
+  if (readJsonFloat(p, "tas", &v)) return v;
+  if (readJsonFloat(p, "ias", &v)) return v;
+  return 0.0f;
+}
+
+bool isOnGround(JsonObjectConst p) {
+  if (!p["alt_baro"].is<const char*>()) return false;
+  return std::strcmp(p["alt_baro"].as<const char*>(), "ground") == 0;
+}
+
+void copyStringTrimmed(JsonObjectConst obj, const char* key, char* out,
+                       size_t out_len) {
+  out[0] = '\0';
+  if (out_len == 0 || !obj[key].is<const char*>()) return;
+  const char* s = obj[key].as<const char*>();
+  size_t n = strnlen(s, out_len - 1);
+  while (n > 0 && s[n - 1] == ' ') --n;
+  std::memcpy(out, s, n);
+  out[n] = '\0';
+}
+
+void formatAltitudeTag(JsonObjectConst p, char* out, size_t out_len) {
+  out[0] = '\0';
+  if (out_len == 0) return;
+  if (p["alt_baro"].is<const char*>()) {
+    if (std::strcmp(p["alt_baro"].as<const char*>(), "ground") == 0) {
+      std::strncpy(out, "GND", out_len - 1);
+      out[out_len - 1] = '\0';
+      return;
+    }
+  }
+  float alt = 0.0f;
+  if (readJsonFloat(p, "alt_baro", &alt) ||
+      readJsonFloat(p, "alt_geom", &alt)) {
+    std::snprintf(out, out_len, "%d ft", static_cast<int>(std::lroundf(alt)));
+  }
+}
+
+}  // namespace
+
+bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
+  const float nm = fetch_radius_km / kKmPerNm;
+  char cmd[512];
+  // -s silent, -f fail on HTTP error, --max-time 5 total budget.
+  std::snprintf(cmd, sizeof(cmd),
+                "curl -sf --max-time 5 "
+                "'https://opendata.adsb.fi/api/v3/lat/%.6f/lon/%.6f/dist/%.1f'",
+                center_lat, center_lon, nm);
+  FILE* pipe = popen(cmd, "r");
+  if (pipe == nullptr) return false;
+
+  std::string body;
+  body.reserve(64 * 1024);
+  char buf[4096];
+  while (size_t n = std::fread(buf, 1, sizeof(buf), pipe)) {
+    body.append(buf, n);
+  }
+  const int rc = pclose(pipe);
+  if (rc != 0 || body.empty()) {
+    std::printf("adsb: fetch failed rc=%d body=%zu\n", rc, body.size());
+    return false;
+  }
+
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    std::printf("adsb: json parse: %s\n", err.c_str());
+    return false;
+  }
+
+  JsonArrayConst ac = doc["ac"].as<JsonArrayConst>();
+  if (ac.isNull()) {
+    s_count = 0;
+    return true;
+  }
+
+  size_t n = 0;
+  for (JsonObjectConst plane : ac) {
+    if (n >= kMaxAircraft) break;
+    if (!plane["lat"].is<float>() || !plane["lon"].is<float>()) continue;
+    if (isOnGround(plane) && !config::kAdsbShowGroundAircraft) continue;
+
+    s_aircraft[n].lat = plane["lat"].as<float>();
+    s_aircraft[n].lon = plane["lon"].as<float>();
+    s_aircraft[n].nose_deg = pickNoseHeading(plane);
+    s_aircraft[n].track_deg = pickTrackHeading(plane);
+    s_aircraft[n].gs_knots = pickGroundSpeed(plane);
+    copyStringTrimmed(plane, "flight", s_aircraft[n].callsign,
+                      sizeof(s_aircraft[n].callsign));
+    if (s_aircraft[n].callsign[0] == '\0') {
+      copyStringTrimmed(plane, "hex", s_aircraft[n].callsign,
+                        sizeof(s_aircraft[n].callsign));
+    }
+    copyStringTrimmed(plane, "t", s_aircraft[n].type,
+                      sizeof(s_aircraft[n].type));
+    formatAltitudeTag(plane, s_aircraft[n].alt, sizeof(s_aircraft[n].alt));
+    ++n;
+  }
+  s_count = n;
+  std::printf("adsb: %zu aircraft in %.1f nm\n", n, nm);
+  return true;
 }
 
 }  // namespace services::adsb
