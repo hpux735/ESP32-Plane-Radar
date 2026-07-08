@@ -629,12 +629,12 @@ void drawCardinalLabels() {
   drawCardinalLabel("E", edge, cy, textdatum_t::middle_right);
 }
 
-// Scale label anchored ON the outer ring, positioned so its text box sits
-// just inside the ring line. If the default E-spoke position collides with
-// another label (cardinal E, airport labels), walk radially around the
-// ring — preferring positions close to and north-of the E spoke — until a
-// clear spot is found. Fallback if the whole ring is crowded: draw at E and
-// accept overlay by the fixed cardinal E.
+// Scale label sits INSIDE the outer ring near the top, ~12° east of N by
+// default (or ~348° / west of N as second choice). Text fully inside the
+// ring so ring lines don't cross through the glyphs (which was making "nm"
+// read as "mm"). White color so it visually reads as a label, not another
+// grid element. Walks outward from N in symmetric E/W steps if the default
+// position collides with cardinals or airport labels.
 void drawScaleLabel(int cx, int cy, int outer_radius) {
   char scale_label[12];
   radar::formatCurrentRangeLabel(scale_label, sizeof(scale_label));
@@ -642,30 +642,22 @@ void drawScaleLabel(int cx, int cy, int outer_radius) {
   applyScaleStyle();
   const int tw = s_draw->textWidth(scale_label);
   const int th = s_draw->fontHeight();
-  const int box_w = tw + 2;  // 1 px margin either side for collision check
+  const int box_w = tw + 2;
   const int box_h = th + 2;
   constexpr float kPi = 3.14159265f;
 
-  // Text CENTER sits on the outer ring (radius = outer_radius). At E where
-  // the ring hugs the screen edge, clamp anchor inward so text stays within
-  // 240×240. Elsewhere the text visually straddles the ring line.
+  // Text sits fully inside the outer ring — radial-outer edge is 2 px inside
+  // the ring line. half_radial blends box_w and box_h by angle so the box
+  // fits regardless of orientation.
   auto anchorAt = [&](int theta_deg, int* out_x, int* out_y) {
     const float rad = theta_deg * kPi / 180.0f;
     const float sin_t = std::sin(rad);
     const float cos_t = std::cos(rad);
-    const float er = static_cast<float>(outer_radius);
-    int ax = cx + static_cast<int>(std::lroundf(er * sin_t));
-    int ay = cy - static_cast<int>(std::lroundf(er * cos_t));
-    const int min_x = box_w / 2;
-    const int max_x = radar::kSize - 1 - box_w / 2;
-    const int min_y = box_h / 2;
-    const int max_y = radar::kSize - 1 - box_h / 2;
-    if (ax < min_x) ax = min_x;
-    if (ax > max_x) ax = max_x;
-    if (ay < min_y) ay = min_y;
-    if (ay > max_y) ay = max_y;
-    *out_x = ax;
-    *out_y = ay;
+    const float half_radial =
+        std::fabs(sin_t) * (box_w * 0.5f) + std::fabs(cos_t) * (box_h * 0.5f);
+    const float er = static_cast<float>(outer_radius) - half_radial - 2.0f;
+    *out_x = cx + static_cast<int>(std::lroundf(er * sin_t));
+    *out_y = cy - static_cast<int>(std::lroundf(er * cos_t));
   };
 
   auto trial = [&](int theta_deg, int* out_x, int* out_y) -> bool {
@@ -683,34 +675,31 @@ void drawScaleLabel(int cx, int cy, int outer_radius) {
   int px = 0;
   int py = 0;
   bool found = false;
-  // Compass angles: 90° = E. Walk N-preferred: 90, 85, 95, 80, 100, 75, ...
-  // up to ±90° from E (i.e. straight N or straight S) then wrap further.
-  constexpr int kStepDeg = 5;
+  // Preferred: 12° east of N. Fallback: 348° (west of N), then step outward
+  // symmetrically. 12° gives a few pixels of clearance from the N crosshair
+  // for typical range labels (34 px wide) at outer_radius 107.
+  constexpr int kBaseDeg = 12;
+  constexpr int kStepDeg = 4;
   for (int delta = 0; delta <= 90 && !found; delta += kStepDeg) {
-    if (trial(90 - delta, &px, &py)) { found = true; break; }
-    if (delta != 0 && trial(90 + delta, &px, &py)) { found = true; break; }
+    if (trial(kBaseDeg + delta, &px, &py)) { found = true; break; }
+    if (trial(360 - kBaseDeg - delta, &px, &py)) { found = true; break; }
   }
   if (!found) {
-    // Continue past N/S into the west half.
-    for (int delta = 95; delta <= 180 && !found; delta += kStepDeg) {
-      if (trial(90 - delta, &px, &py)) { found = true; break; }
-      if (trial(90 + delta, &px, &py)) { found = true; break; }
+    // Continue past E/W into the south half.
+    for (int delta = 94; delta <= 180 && !found; delta += kStepDeg) {
+      if (trial(kBaseDeg + delta, &px, &py)) { found = true; break; }
+      if (trial(360 - kBaseDeg - delta, &px, &py)) { found = true; break; }
     }
   }
   if (!found) {
-    // Whole ring is crowded — fall back to the E spoke, will be overlaid by
-    // the cardinal E label. Better than dropping the range label entirely.
-    anchorAt(90, &px, &py);
+    anchorAt(kBaseDeg, &px, &py);
   }
 
+  s_draw->setTextDatum(textdatum_t::middle_center);
+  s_draw->setTextColor(radar::kColorLabel);  // white, contrasts with green rings
+  s_draw->drawString(scale_label, px, py);
   const int left = px - box_w / 2;
   const int top = py - box_h / 2;
-  // No fillRect background — text sits over the ring line with transparent
-  // bg. Antialiased characters read cleanly over the thin ring stroke and
-  // don't produce a dark box crossing the ring.
-  s_draw->setTextDatum(textdatum_t::middle_center);
-  s_draw->setTextColor(radar::kColorGrid);
-  s_draw->drawString(scale_label, px, py);
   labels::add(left, top, box_w, box_h);
 }
 
