@@ -633,7 +633,22 @@ bool pickTagPlacement(const services::adsb::Aircraft& p, int ax, int ay,
          tryPlaceSlot(0, ax, ay, c, px, py, out);
 }
 
-void drawTagPlacement(const TagPlacement& tp) {
+// Thin leader from icon edge to the tag anchor corner so the eye can
+// visually connect a tag to its aircraft. Starts one icon-radius out from
+// the symbol center so it doesn't visibly begin inside the triangle.
+void drawLeaderLine(int icon_x, int icon_y, int anchor_x, int anchor_y) {
+  const float dx = static_cast<float>(anchor_x - icon_x);
+  const float dy = static_cast<float>(anchor_y - icon_y);
+  const float len = std::sqrt(dx * dx + dy * dy);
+  constexpr float kIconRadius = 7.0f;
+  if (len <= kIconRadius + 2.0f) return;
+  const int sx = icon_x + static_cast<int>(std::lroundf(dx * kIconRadius / len));
+  const int sy = icon_y + static_cast<int>(std::lroundf(dy * kIconRadius / len));
+  s_draw->drawLine(sx, sy, anchor_x, anchor_y, radar::kColorLabel);
+}
+
+void drawTagPlacement(int icon_x, int icon_y, const TagPlacement& tp) {
+  drawLeaderLine(icon_x, icon_y, tp.anchor_x, tp.anchor_y);
   applyTagStyle();
   const int line_h = s_draw->fontHeight();
   const TagContent& c = tp.content;
@@ -697,6 +712,7 @@ void sortBeyondDotsFarFirst(BeyondDotDrawItem* items, size_t count) {
 
 void drawAircraft() {
   initLabelMetrics();
+  initTagLabelMetrics();  // calibrates s_tag_vlw_size to kAircraftTagLabelHeightPx
 
   const size_t n = services::adsb::aircraftCount();
   const services::adsb::Aircraft* planes = services::adsb::aircraftList();
@@ -786,7 +802,7 @@ void drawAircraft() {
     TagPlacement tp;
     if (pickTagPlacement(planes[i], items[d].x, items[d].y, pred_x[d],
                          pred_y[d], content, &tp)) {
-      drawTagPlacement(tp);
+      drawTagPlacement(items[d].x, items[d].y, tp);
       if (planes[i].callsign[0] != '\0') {
         rememberSlot(planes[i].callsign, tp.slot);
       }
