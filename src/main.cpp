@@ -8,6 +8,7 @@
 #include "config.h"
 #include "hardware/display.h"
 #include "services/adsb_client.h"
+#include "services/focus_points.h"
 #include "services/radar_location.h"
 #include "services/wifi_setup.h"
 #include "ui/radar_display.h"
@@ -42,10 +43,25 @@ void onRangeTap() {
   }
 }
 
+void onFocusTap() {
+  services::focus::cycle();
+  const auto& fp = services::focus::current();
+  Serial.printf("Focus: %s\n", fp.name);
+  if (g_radar_visible && WiFi.status() == WL_CONNECTED) {
+    // Force a fresh fetch at the new center so the display updates fast.
+    services::adsb::fetchUpdate(services::location::lat(),
+                                services::location::lon(),
+                                ui::radar::fetchRadiusKm());
+    ui::radarDisplayDraw();
+  }
+}
+
 void handleBootButton() {
   bootButtonPollLongPress();
-  if (bootButtonConsumeTap()) {
-    onRangeTap();
+  switch (bootButtonConsumeEvent()) {
+    case BootTap::Single: onFocusTap(); break;
+    case BootTap::Double: onRangeTap(); break;
+    case BootTap::None: break;
   }
 }
 
@@ -75,6 +91,7 @@ void setup() {
   }
   services::location::init();
   ui::radar::rangeInit();
+  services::focus::init();
   services::adsb::setPollFn(wifiLoop);
 
   if (wifiSetupConnect()) {

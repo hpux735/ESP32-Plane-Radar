@@ -369,6 +369,34 @@ bool bootButtonConsumeTap() {
   return tap;
 }
 
+// Double-tap discriminator sitting on top of bootButtonConsumeTap. On a
+// new tap, wait ≤ kDoubleTapWindowMs for a second one before emitting the
+// event. This means single-taps have a small perceived latency (~250 ms) —
+// worth it to avoid single-then-double-tap races.
+BootTap bootButtonConsumeEvent() {
+  constexpr unsigned long kDoubleTapWindowMs = 250;
+  static bool s_pending_single = false;
+  static unsigned long s_first_tap_ms = 0;
+
+  const bool tap = bootButtonConsumeTap();
+  const unsigned long now = millis();
+
+  if (tap) {
+    if (s_pending_single && (now - s_first_tap_ms) <= kDoubleTapWindowMs) {
+      s_pending_single = false;
+      return BootTap::Double;
+    }
+    s_pending_single = true;
+    s_first_tap_ms = now;
+    return BootTap::None;
+  }
+  if (s_pending_single && (now - s_first_tap_ms) > kDoubleTapWindowMs) {
+    s_pending_single = false;
+    return BootTap::Single;
+  }
+  return BootTap::None;
+}
+
 void bootButtonPollLongPress() {
   if (wifiBootButtonPressed()) {
     portENTER_CRITICAL(&s_boot_mux);

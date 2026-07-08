@@ -19,6 +19,7 @@
 #include "config.h"
 #include "services/adsb_client.h"
 #include "services/radar_location.h"
+#include "services/wifi_setup.h"
 
 // The ESP32 build embeds data/ui_font.vlw via `board_build.embed_files`
 // which creates objcopy symbols. On native, embed the same bytes with
@@ -223,12 +224,21 @@ static constexpr double kNativeHomeLon = -122.4093;
 
 static double s_lat = kNativeHomeLat;
 static double s_lon = kNativeHomeLon;
+static bool s_override_active = false;
+static double s_override_lat = 0.0;
+static double s_override_lon = 0.0;
 
 void init() {}
-double lat() { return s_lat; }
-double lon() { return s_lon; }
+double lat() { return s_override_active ? s_override_lat : s_lat; }
+double lon() { return s_override_active ? s_override_lon : s_lon; }
 bool saveFromStrings(const char*, const char*) { return false; }
 void clear() { s_lat = kNativeHomeLat; s_lon = kNativeHomeLon; }
+void setOverride(double lat, double lon) {
+  s_override_lat = lat;
+  s_override_lon = lon;
+  s_override_active = true;
+}
+void clearOverride() { s_override_active = false; }
 
 }  // namespace services::location
 
@@ -271,6 +281,32 @@ bool bootButtonConsumeTap() {
 void bootButtonPollLongPress() {
   // No-op on desktop; long-press triggers WiFi reset on hardware, meaningless
   // when we have no persistent WiFi credentials to reset.
+}
+
+// Same double-tap discriminator as the firmware. Native uses SPACE (BOOT
+// pin fake GPIO) for taps.
+BootTap bootButtonConsumeEvent() {
+  constexpr unsigned long kDoubleTapWindowMs = 250;
+  static bool s_pending_single = false;
+  static unsigned long s_first_tap_ms = 0;
+
+  const bool tap = bootButtonConsumeTap();
+  const unsigned long now = millis();
+
+  if (tap) {
+    if (s_pending_single && (now - s_first_tap_ms) <= kDoubleTapWindowMs) {
+      s_pending_single = false;
+      return BootTap::Double;
+    }
+    s_pending_single = true;
+    s_first_tap_ms = now;
+    return BootTap::None;
+  }
+  if (s_pending_single && (now - s_first_tap_ms) > kDoubleTapWindowMs) {
+    s_pending_single = false;
+    return BootTap::Single;
+  }
+  return BootTap::None;
 }
 
 #endif  // USE_NATIVE

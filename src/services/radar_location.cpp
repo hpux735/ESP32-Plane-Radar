@@ -16,6 +16,9 @@ constexpr char kKeyLon[] = "lon";
 
 double s_lat = config::kDefaultRadarLat;
 double s_lon = config::kDefaultRadarLon;
+bool s_override_active = false;
+double s_override_lat = 0.0;
+double s_override_lon = 0.0;
 
 bool parseCoord(const char* text, double* out) {
   if (text == nullptr || text[0] == '\0') {
@@ -60,9 +63,17 @@ void init() {
   prefs.end();
 }
 
-double lat() { return s_lat; }
+double lat() { return s_override_active ? s_override_lat : s_lat; }
 
-double lon() { return s_lon; }
+double lon() { return s_override_active ? s_override_lon : s_lon; }
+
+void setOverride(double lat, double lon) {
+  s_override_lat = lat;
+  s_override_lon = lon;
+  s_override_active = true;
+}
+
+void clearOverride() { s_override_active = false; }
 
 bool saveFromStrings(const char* lat_str, const char* lon_str) {
   double lat = 0.0;

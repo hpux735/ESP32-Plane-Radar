@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+
 /** True when the next boot should show the setup screen first (after credential reset). */
 bool wifiShowsSetupScreenOnBoot();
 void wifiResetCredentialsAndReboot();
@@ -16,3 +18,9 @@ void bootButtonInit();
 bool bootButtonConsumeTap();
 /** Call each loop iteration; triggers WiFi reset on long hold. */
 void bootButtonPollLongPress();
+
+/** Tap-pattern discriminator. Single = cycle focus, Double = cycle range. */
+enum class BootTap : uint8_t { None, Single, Double };
+/** Consume the pending tap event (if any). Call once per loop after
+ *  bootButtonPollLongPress(). Double-tap window is ~250 ms. */
+BootTap bootButtonConsumeEvent();

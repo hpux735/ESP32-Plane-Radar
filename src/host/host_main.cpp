@@ -20,14 +20,11 @@
 
 #include "hardware/display.h"
 #include "services/adsb_client.h"
+#include "services/focus_points.h"
 #include "services/radar_location.h"
+#include "services/wifi_setup.h"
 #include "ui/radar_display.h"
 #include "ui/radar_range.h"
-
-// Provided by src/host/host_stubs.cpp
-void bootButtonInit();
-bool bootButtonConsumeTap();
-void bootButtonPollLongPress();
 
 namespace {
 
@@ -64,6 +61,18 @@ void onRangeTap() {
   ui::radarDisplayDraw();
 }
 
+void onFocusTap() {
+  services::focus::cycle();
+  const auto& fp = services::focus::current();
+  std::printf("Focus: %s (%.4f, %.4f)\n", fp.name, services::location::lat(),
+              services::location::lon());
+  // Kick a fresh fetch so the new center's traffic loads immediately.
+  services::adsb::fetchUpdate(services::location::lat(),
+                              services::location::lon(),
+                              ui::radar::fetchRadiusKm());
+  ui::radarDisplayDraw();
+}
+
 bool consumeShotKey() {
   static bool prev_pressed = false;
   const bool now = !lgfx::v1::gpio_in(kShotFakeGpio);  // active low
@@ -75,13 +84,17 @@ bool consumeShotKey() {
 }  // namespace
 
 void setup() {
-  std::printf("Plane Radar — SDL emulator (SPACE=range, S=screenshot)\n");
+  std::printf(
+      "Plane Radar — SDL emulator\n"
+      "  SPACE  : tap  (single = cycle focus, double = cycle range)\n"
+      "  S      : save screenshot\n");
   bootButtonInit();
   lgfx::v1::gpio_hi(kShotFakeGpio);
   lgfx::Panel_sdl::addKeyCodeMapping(SDLK_s, kShotFakeGpio);
   displayInit();
   services::location::init();
   ui::radar::rangeInit();
+  services::focus::init();
   ui::radarDisplayDraw();
   // Kick off an initial fetch so the first frame isn't empty.
   services::adsb::fetchUpdate(services::location::lat(),
@@ -93,8 +106,10 @@ void loop() {
   static unsigned long last_shot_ms = 0;
   static unsigned long last_adsb_ms = 0;
   bootButtonPollLongPress();
-  if (bootButtonConsumeTap()) {
-    onRangeTap();
+  switch (bootButtonConsumeEvent()) {
+    case BootTap::Single: onFocusTap(); break;
+    case BootTap::Double: onRangeTap(); break;
+    case BootTap::None: break;
   }
   if (consumeShotKey()) {
     saveScreenshot(kShotPath);

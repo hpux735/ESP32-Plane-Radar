@@ -11,6 +11,7 @@
 #include "hardware/display_font.h"
 #include "services/adsb_client.h"
 #include "services/radar_location.h"
+#include "services/focus_points.h"
 #include "ui/coastline_overlay.h"
 #include "ui/label_layout.h"
 #include "ui/land_overlay.h"
@@ -1141,8 +1142,16 @@ void drawCardinalLabels() {
 // grid element. Walks outward from N in symmetric E/W steps if the default
 // position collides with cardinals or airport labels.
 void drawScaleLabel(int cx, int cy, int outer_radius) {
-  char scale_label[12];
-  radar::formatCurrentRangeLabel(scale_label, sizeof(scale_label));
+  char scale_label[20];
+  const auto& fp = services::focus::current();
+  char range_label[12];
+  radar::formatCurrentRangeLabel(range_label, sizeof(range_label));
+  if (fp.is_home) {
+    std::snprintf(scale_label, sizeof(scale_label), "%s", range_label);
+  } else {
+    std::snprintf(scale_label, sizeof(scale_label), "%s %s", fp.name,
+                  range_label);
+  }
 
   applyScaleStyle();
   const int tw = s_draw->textWidth(scale_label);

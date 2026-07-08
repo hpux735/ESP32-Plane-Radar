@@ -15,4 +15,9 @@ bool saveFromStrings(const char* lat_str, const char* lon_str);
 /** Clear stored coordinates (e.g. with WiFi credential reset). */
 void clear();
 
+/** Focus-point override: when set, lat()/lon() return these instead of the
+ *  stored home. Clearing returns to the home lat/lon. Not persisted. */
+void setOverride(double lat, double lon);
+void clearOverride();
+
 }  // namespace services::location

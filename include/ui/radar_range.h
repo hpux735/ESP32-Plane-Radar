@@ -39,6 +39,8 @@ constexpr size_t kRangePresetCount =
 void rangeInit();
 /** Cycle preset and save to flash. */
 void rangeNext();
+/** Set preset by index; safe to call with any value (clamps). Persists. */
+void rangeSetIndex(uint8_t idx);
 const RangePreset& rangeCurrent();
 uint8_t rangeIndex();
 /** ADSB fetch radius (km): scaled to screen edge so beyond-ring dots have data. */
