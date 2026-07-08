@@ -1,5 +1,9 @@
 #pragma once
 
+#ifdef USE_NATIVE
+#include "hardware/lgfx_config_native.hpp"
+#else
+
 #define LGFX_USE_V1
 #include <LovyanGFX.hpp>
 
@@ -34,3 +38,6 @@ public:
     setPanel(&_panel);
   }
 };
+
+#endif  // USE_NATIVE
+
