@@ -59,8 +59,8 @@ void onFocusTap() {
 void handleBootButton() {
   bootButtonPollLongPress();
   switch (bootButtonConsumeEvent()) {
-    case BootTap::Single: onFocusTap(); break;
-    case BootTap::Double: onRangeTap(); break;
+    case BootTap::Single: onRangeTap(); break;
+    case BootTap::Double: onFocusTap(); break;
     case BootTap::None: break;
   }
 }

@@ -1121,6 +1121,21 @@ void drawCrosshairs(int cx, int cy, int radius, uint16_t color) {
 
 void drawCenterDot(int cx, int cy) {
   s_draw->fillSmoothCircle(cx, cy, radar::kCenterDotRadius, radar::kColorCenter);
+  // When focused on an airport (not Home), label the center with its ICAO/
+  // short name — the "you are focused on X" reminder for airports too small
+  // to appear in the general large-airports overlay (SQL, HAF, PAO, HWD).
+  const auto& fp = services::focus::current();
+  if (!fp.is_home) {
+    s_draw->setFont(&fonts::FreeSansBold9pt7b);
+    s_draw->setTextSize(1);
+    const int th = s_draw->fontHeight();
+    s_draw->setTextDatum(textdatum_t::top_center);
+    s_draw->setTextColor(radar::kColorRunwayLabel, radar::kColorBackground);
+    const int y = cy + radar::kCenterDotRadius + 3;
+    s_draw->drawString(fp.name, cx, y);
+    const int tw = s_draw->textWidth(fp.name);
+    labels::add(cx - tw / 2 - 1, y - 1, tw + 2, th + 2);
+  }
 }
 
 void drawCardinalLabels() {
@@ -1142,16 +1157,8 @@ void drawCardinalLabels() {
 // grid element. Walks outward from N in symmetric E/W steps if the default
 // position collides with cardinals or airport labels.
 void drawScaleLabel(int cx, int cy, int outer_radius) {
-  char scale_label[20];
-  const auto& fp = services::focus::current();
-  char range_label[12];
-  radar::formatCurrentRangeLabel(range_label, sizeof(range_label));
-  if (fp.is_home) {
-    std::snprintf(scale_label, sizeof(scale_label), "%s", range_label);
-  } else {
-    std::snprintf(scale_label, sizeof(scale_label), "%s %s", fp.name,
-                  range_label);
-  }
+  char scale_label[12];
+  radar::formatCurrentRangeLabel(scale_label, sizeof(scale_label));
 
   applyScaleStyle();
   const int tw = s_draw->textWidth(scale_label);

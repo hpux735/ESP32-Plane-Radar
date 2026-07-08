@@ -86,7 +86,7 @@ bool consumeShotKey() {
 void setup() {
   std::printf(
       "Plane Radar — SDL emulator\n"
-      "  SPACE  : tap  (single = cycle focus, double = cycle range)\n"
+      "  SPACE  : tap  (single = cycle range, double = cycle focus)\n"
       "  S      : save screenshot\n");
   bootButtonInit();
   lgfx::v1::gpio_hi(kShotFakeGpio);
@@ -107,8 +107,8 @@ void loop() {
   static unsigned long last_adsb_ms = 0;
   bootButtonPollLongPress();
   switch (bootButtonConsumeEvent()) {
-    case BootTap::Single: onFocusTap(); break;
-    case BootTap::Double: onRangeTap(); break;
+    case BootTap::Single: onRangeTap(); break;
+    case BootTap::Double: onFocusTap(); break;
     case BootTap::None: break;
   }
   if (consumeShotKey()) {

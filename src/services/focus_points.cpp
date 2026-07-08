@@ -14,15 +14,17 @@ constexpr char kPrefsIndexKey[] = "idx";
 constexpr unsigned long kOverlayMs = 1500;
 
 // Bay Area default focus ring. Airport coordinates from OurAirports data;
-// default ranges chosen for each field's typical traffic pattern (Class B
+// default ranges chosen for each field's typical traffic pattern (Class B/C
 // = 10 nm, GA = 5 nm).
 const FocusPoint kFocusPoints[] = {
     {"Home", 0.0,       0.0,        1 /*10 nm*/, true},   // Bryant St, SF
-    {"SFO",  37.6188,  -122.3750,   1 /*10 nm*/, false},
-    {"OAK",  37.7213,  -122.2214,   1 /*10 nm*/, false},
-    {"SQL",  37.5119,  -122.2495,   0 /* 5 nm*/, false},  // San Carlos
-    {"HAF",  37.5136,  -122.5006,   0 /* 5 nm*/, false},  // Half Moon Bay
-    {"PAO",  37.4611,  -122.1150,   0 /* 5 nm*/, false},  // Palo Alto
+    {"SFO",  37.6188,  -122.3750,   1 /*10 nm*/, false},  // Class B
+    {"OAK",  37.7213,  -122.2214,   1 /*10 nm*/, false},  // Class C
+    {"SJC",  37.3639,  -121.9289,   1 /*10 nm*/, false},  // San Jose, Class C
+    {"HWD",  37.6591,  -122.1214,   0 /* 5 nm*/, false},  // Hayward, GA
+    {"SQL",  37.5119,  -122.2495,   0 /* 5 nm*/, false},  // San Carlos, GA
+    {"PAO",  37.4611,  -122.1150,   0 /* 5 nm*/, false},  // Palo Alto, GA
+    {"HAF",  37.5136,  -122.5006,   0 /* 5 nm*/, false},  // Half Moon Bay, GA
 };
 constexpr size_t kFocusCount = sizeof(kFocusPoints) / sizeof(kFocusPoints[0]);
 
