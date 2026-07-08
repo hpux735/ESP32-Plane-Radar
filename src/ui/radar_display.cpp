@@ -11,6 +11,7 @@
 #include "hardware/display_font.h"
 #include "services/adsb_client.h"
 #include "services/radar_location.h"
+#include "ui/coastline_overlay.h"
 #include "ui/label_layout.h"
 #include "ui/radar_range.h"
 #include "ui/radar_theme.h"
@@ -718,8 +719,12 @@ void drawStaticGrid(Gfx& gfx) {
   drawRings(cx, cy, grid_r);
   drawCrosshairs(cx, cy, grid_r, radar::kColorGrid);
   initPalette();
-  // Order matters: cardinals + airports register their bounding rects with
-  // labels::, then the scale label dodges around them.
+  // Coastline sits below all labels + runways so those draw on top for
+  // legibility. No labels to register, so its order among the label-emitting
+  // draws doesn't matter.
+  coastline::draw(gfx);
+  // Order among these matters: cardinals + airports register bounding rects
+  // with labels::, then the scale label dodges around them.
   drawCardinalLabels();
   runway::drawLargeAirportRunways(gfx);
   drawCenterDot(cx, cy);
