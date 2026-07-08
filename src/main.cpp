@@ -11,6 +11,7 @@
 #include "services/focus_points.h"
 #include "services/radar_location.h"
 #include "services/wifi_setup.h"
+#include "ui/layer_style.h"
 #include "ui/radar_display.h"
 #include "ui/radar_range.h"
 #include "ui/status_screens.h"
@@ -92,6 +93,7 @@ void setup() {
   services::location::init();
   ui::radar::rangeInit();
   services::focus::init();
+  ui::layers::init();
   services::adsb::setPollFn(wifiLoop);
 
   if (wifiSetupConnect()) {

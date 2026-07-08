@@ -15,6 +15,7 @@
 #include "ui/coastline_overlay.h"
 #include "ui/label_layout.h"
 #include "ui/land_overlay.h"
+#include "ui/layer_style.h"
 #include "ui/radar_range.h"
 #include "ui/radar_theme.h"
 #include "ui/runway_overlay.h"
@@ -992,6 +993,7 @@ void drawAircraft() {
   // (budget scales with range preset). Untagged planes still render with
   // symbol + track vector so the density stays visible, they just don't
   // add text clutter to the frame.
+  if (!ui::layers::enabled(ui::layers::Layer::AircraftTags)) return;
   struct Scored {
     uint8_t d;
     float score;

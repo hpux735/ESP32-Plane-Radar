@@ -3,6 +3,7 @@
 #include <cstdio>
 
 #include "data/coastlines.h"
+#include "ui/layer_style.h"
 #include "ui/map_projection.hpp"
 #include "ui/radar_theme.h"
 
@@ -17,6 +18,7 @@ inline uint16_t coastColor() { return radar::kColorGrid; }
 }  // namespace
 
 void draw(lgfx::LGFXBase& gfx) {
+  if (!ui::layers::enabled(ui::layers::Layer::Coastline)) return;
   using namespace data::coastlines;
   for (size_t i = 0; i < kPolylineCount; ++i) {
     const Polyline& pl = kPolylines[i];

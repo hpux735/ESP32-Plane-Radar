@@ -23,6 +23,7 @@
 #include "services/focus_points.h"
 #include "services/radar_location.h"
 #include "services/wifi_setup.h"
+#include "ui/layer_style.h"
 #include "ui/radar_display.h"
 #include "ui/radar_range.h"
 
@@ -81,20 +82,52 @@ bool consumeShotKey() {
   return edge;
 }
 
+// Native layer toggles — 1..5 flip the corresponding layer. Each key is
+// bound to its own fake GPIO so the tap-edge helper can debounce it
+// cleanly the same way as the boot/screenshot keys.
+struct KeyBinding {
+  SDL_KeyCode key;
+  uint8_t gpio;
+  ui::layers::Layer layer;
+};
+constexpr KeyBinding kLayerKeys[] = {
+    {SDLK_1, 20, ui::layers::Layer::Coastline},
+    {SDLK_2, 21, ui::layers::Layer::Land},
+    {SDLK_3, 22, ui::layers::Layer::RunwaysLarge},
+    {SDLK_4, 23, ui::layers::Layer::RunwaysFocus},
+    {SDLK_5, 24, ui::layers::Layer::AircraftTags},
+};
+
+bool consumeLayerKey(const KeyBinding& kb) {
+  static bool prev[sizeof(kLayerKeys) / sizeof(kLayerKeys[0])] = {};
+  const size_t idx = &kb - &kLayerKeys[0];
+  const bool now = !lgfx::v1::gpio_in(kb.gpio);
+  const bool edge = !prev[idx] && now;
+  prev[idx] = now;
+  return edge;
+}
+
 }  // namespace
 
 void setup() {
   std::printf(
       "Plane Radar — SDL emulator\n"
       "  SPACE  : tap  (single = cycle range, double = cycle focus)\n"
-      "  S      : save screenshot\n");
+      "  S      : save screenshot\n"
+      "  1..5   : toggle layer (coastline / land / runways-large /\n"
+      "           runways-focus / aircraft-tags)\n");
   bootButtonInit();
   lgfx::v1::gpio_hi(kShotFakeGpio);
   lgfx::Panel_sdl::addKeyCodeMapping(SDLK_s, kShotFakeGpio);
+  for (const auto& kb : kLayerKeys) {
+    lgfx::v1::gpio_hi(kb.gpio);
+    lgfx::Panel_sdl::addKeyCodeMapping(kb.key, kb.gpio);
+  }
   displayInit();
   services::location::init();
   ui::radar::rangeInit();
   services::focus::init();
+  ui::layers::init();
   ui::radarDisplayDraw();
   // Kick off an initial fetch so the first frame isn't empty.
   services::adsb::fetchUpdate(services::location::lat(),
@@ -114,6 +147,12 @@ void loop() {
   if (consumeShotKey()) {
     saveScreenshot(kShotPath);
     std::printf("screenshot: %s\n", kShotPath);
+  }
+  for (const auto& kb : kLayerKeys) {
+    if (consumeLayerKey(kb)) {
+      ui::layers::toggle(kb.layer);
+      ui::radarDisplayDraw();
+    }
   }
 
   const unsigned long now = millis();

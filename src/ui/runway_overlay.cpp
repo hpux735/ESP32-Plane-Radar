@@ -11,6 +11,7 @@
 #include "services/focus_points.h"
 #include "services/radar_location.h"
 #include "ui/label_layout.h"
+#include "ui/layer_style.h"
 #include "ui/radar_range.h"
 #include "ui/radar_theme.h"
 
@@ -323,6 +324,9 @@ void drawLargeAirportRunways(lgfx::LGFXBase& gfx) {
   if (!radar::showRunways()) {
     return;
   }
+  const bool large_on = ui::layers::enabled(ui::layers::Layer::RunwaysLarge);
+  const bool focus_on = ui::layers::enabled(ui::layers::Layer::RunwaysFocus);
+  if (!large_on && !focus_on) return;
   displayFontEnsureLoaded(gfx);
   const float radius_km = radar::fetchRadiusKm();
 
@@ -334,6 +338,7 @@ void drawLargeAirportRunways(lgfx::LGFXBase& gfx) {
     s_label_pending[i] = false;
   }
 
+  if (!large_on) goto focus_pass;
   for (size_t i = 0; i < data::large_airports::kRunwayCount; ++i) {
     const auto& rw = data::large_airports::kRunways[i];
     const uint16_t ap_idx = rw.airport_idx;
@@ -358,14 +363,17 @@ void drawLargeAirportRunways(lgfx::LGFXBase& gfx) {
     }
   }
 
+focus_pass:
   // Focus-airport pass: render the GA field currently under focus. Its
   // runways + label are added on top of the large-airport pass. Skipped
   // entirely when Home or a large-airport (SFO/OAK/SJC) is the focus.
   int focus_extras_labeled_idx = -1;
-  for (size_t i = 0; i < data::focus_airports::kAirportCount; ++i) {
-    if (focusMatches(data::focus_airports::kAirports[i].ident)) {
-      focus_extras_labeled_idx = static_cast<int>(i);
-      break;
+  if (focus_on) {
+    for (size_t i = 0; i < data::focus_airports::kAirportCount; ++i) {
+      if (focusMatches(data::focus_airports::kAirports[i].ident)) {
+        focus_extras_labeled_idx = static_cast<int>(i);
+        break;
+      }
     }
   }
   for (size_t i = 0;

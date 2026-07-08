@@ -1,12 +1,14 @@
 #include "ui/land_overlay.h"
 
 #include "data/land.h"
+#include "ui/layer_style.h"
 #include "ui/map_projection.hpp"
 #include "ui/radar_theme.h"
 
 namespace ui::land {
 
 void draw(lgfx::LGFXBase& gfx) {
+  if (!ui::layers::enabled(ui::layers::Layer::Land)) return;
   using namespace data::land;
   const uint16_t color = radar::kColorLand;
   for (size_t i = 0; i < kTriangleCount; ++i) {
