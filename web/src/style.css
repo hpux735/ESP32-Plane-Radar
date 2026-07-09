@@ -30,6 +30,7 @@ main {
   max-width: 780px;
   margin: 0 auto;
   padding: 16px;
+  padding-top: 64px;   /* room for the fixed Settings button */
   display: grid;
   grid-template-columns: 1fr;
   gap: 16px;
@@ -40,59 +41,6 @@ main {
   font-size: 20px;
   letter-spacing: 0.02em;
 }
-.page-title .tagline {
-  margin: 2px 0 0;
-  color: var(--text-dim);
-  font-size: 13px;
-}
-
-.picker {
-  position: relative;
-}
-#airport-search {
-  width: 100%;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
-  color: var(--text);
-  font-size: 15px;
-  font-family: inherit;
-}
-#airport-search:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: -1px;
-}
-#airport-results {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  margin: 0;
-  padding: 4px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  list-style: none;
-  max-height: 240px;
-  overflow-y: auto;
-  z-index: 10;
-}
-#airport-results li {
-  padding: 8px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-}
-#airport-results li:hover,
-#airport-results li[aria-selected="true"] {
-  background: var(--border);
-}
-#airport-results li .icao {
-  color: var(--accent);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  margin-right: 8px;
-}
 
 .stage {
   display: flex;
@@ -102,8 +50,7 @@ main {
 }
 
 #radar {
-  /* The panel is 240x240 native. Scale up for readable display. On
-     narrow phones, cap to the viewport width less some padding. */
+  /* The panel is 240x240 native. Scale up for readable display. */
   width: min(480px, calc(100vw - 32px));
   height: min(480px, calc(100vw - 32px));
   image-rendering: pixelated;
@@ -115,6 +62,22 @@ main {
 .controls {
   display: grid;
   gap: 10px;
+  justify-items: center;
+}
+.tap-hint {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13px;
+  text-align: center;
+}
+.tap-hint kbd {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
 }
 .hints {
   display: flex;
@@ -124,8 +87,7 @@ main {
   font-size: 13px;
 }
 /* Hints double as buttons — clicking one triggers the corresponding
-   tap gesture. Style them minimally so they don't look like layer
-   buttons but still read as tappable. */
+   tap gesture on the radar. */
 button.hint {
   background: transparent;
   border: none;
@@ -157,53 +119,56 @@ button.hint:focus-visible kbd {
   background: var(--border);
 }
 
-.layers {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  justify-content: center;
-}
-.layers button {
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 6px 10px;
-  border-radius: 999px;
-  font-size: 12px;
-  cursor: pointer;
-  font-family: inherit;
-}
-.layers button[aria-pressed="true"] {
-  background: var(--accent);
-  color: var(--bg);
-  border-color: var(--accent);
-}
-
 .page-footer {
   color: var(--text-dim);
   font-size: 12px;
   text-align: center;
   padding-bottom: 20px;
 }
+.page-footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.page-footer a:hover {
+  text-decoration: underline;
+}
 
-/* Settings — floating gear button + modal dialog. Doesn't disturb the
-   radar layout; opens over the top of it on click. */
+/* Settings — prominent pill button at top-right so it reads as a
+   real "click me" control rather than decoration. Pulses gently on
+   first paint to draw attention on load. */
 .settings-open {
   position: fixed;
   top: 12px;
   right: 12px;
   z-index: 20;
-  background: var(--bg-elevated);
-  color: var(--text);
-  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
   border-radius: 999px;
-  padding: 6px 12px;
-  font-size: 12px;
+  padding: 10px 18px;
+  font-size: 14px;
+  font-weight: 600;
   font-family: inherit;
   cursor: pointer;
+  box-shadow: 0 2px 12px rgba(77, 208, 225, 0.35);
+  transition: transform 0.1s ease, box-shadow 0.2s ease;
 }
-.settings-open:hover { border-color: var(--accent); color: var(--accent); }
+.settings-open:hover,
+.settings-open:focus-visible {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(77, 208, 225, 0.55);
+  outline: none;
+}
+.settings-open .gear {
+  display: inline-block;
+  font-size: 16px;
+  line-height: 1;
+}
 
+/* Modal dialog. */
 .settings-dialog {
   background: var(--bg-elevated);
   color: var(--text);
@@ -267,6 +232,46 @@ button.hint:focus-visible kbd {
 }
 .settings-form input:read-only { color: var(--text-dim); }
 
+/* Airport typeahead — used in the Home + METAR "Center on airport"
+   boxes AND in each focus row's Label field. Positions its suggestion
+   list absolutely under the input. */
+.airport-search-row { margin-bottom: 10px; }
+.airport-search-row label { position: relative; }
+.airport-suggest {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  list-style: none;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 100;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+.airport-suggest li {
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.airport-suggest li:hover,
+.airport-suggest li[aria-selected="true"] {
+  background: var(--border);
+}
+.airport-suggest .icao {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  margin-right: 6px;
+}
+
 .focus-table {
   width: 100%;
   border-collapse: collapse;
@@ -282,6 +287,7 @@ button.hint:focus-visible kbd {
 .focus-table th { color: var(--text-dim); font-weight: 500; }
 .focus-table input,
 .focus-table select { width: 100%; }
+.focus-table .fp-label-wrap { position: relative; }
 .focus-table .fp-remove {
   background: transparent;
   border: 1px solid var(--border);
@@ -304,6 +310,29 @@ button.hint:focus-visible kbd {
   font-size: 12px;
 }
 .focus-add:hover { border-color: var(--accent); }
+
+/* Layer toggle pills — inside the settings dialog, not on the main
+   page anymore. Pressed state uses the accent color same as before. */
+.layer-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.layer-toggle {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.layer-toggle[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
 
 .settings-form footer {
   display: flex;
@@ -329,6 +358,7 @@ button.hint:focus-visible kbd {
   background: var(--accent);
   color: var(--bg);
   border-color: var(--accent);
+  font-weight: 600;
 }
 .settings-cancel {
   background: transparent;
@@ -340,49 +370,29 @@ button.hint:focus-visible kbd {
   font-size: 12px;
 }
 .settings-reset:hover { color: #ff7070; border-color: #ff7070; }
-.page-footer a {
-  color: var(--accent);
-  text-decoration: none;
-}
-.page-footer a:hover {
-  text-decoration: underline;
-}
 
-/* Desktop: controls + picker sit to the right of the canvas, stacked. */
+/* Desktop: controls sit next to the canvas. Airport picker section is
+   gone — the search moved into the settings dialog. */
 @media (min-width: 720px) {
   main {
     grid-template-columns: 1fr auto;
     grid-template-areas:
       "title title"
       "stage controls"
-      "stage picker"
       "footer footer";
   }
-  .page-title {
-    grid-area: title;
-  }
-  .stage {
-    grid-area: stage;
-  }
+  .page-title { grid-area: title; }
+  .stage { grid-area: stage; }
   .controls {
     grid-area: controls;
-    align-self: end;
+    align-self: center;
     justify-items: start;
   }
-  .picker {
-    grid-area: picker;
-    align-self: start;
-    min-width: 280px;
-  }
+  .tap-hint { text-align: left; }
   .hints {
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
   }
-  .layers {
-    justify-content: flex-start;
-  }
-  .page-footer {
-    grid-area: footer;
-  }
+  .page-footer { grid-area: footer; }
 }

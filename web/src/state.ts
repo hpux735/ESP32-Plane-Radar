@@ -5,7 +5,7 @@
 import { RANGE_PRESETS } from "./theme";
 
 export type LayerId = "coast" | "land" | "roads" | "runways" | "tags";
-export type ViewMode = "radar" | "weather";
+export type ViewMode = "radar" | "weather" | "cockpit";
 
 export interface FocusPoint {
   label: string;
@@ -27,10 +27,12 @@ export interface MetarConfig {
 }
 
 // Bay Area focus ring — baked default. Copied into state.focusRing at boot
-// (or overridden from localStorage). First entry is the default center:
-// Sutro Tower (well-known SF broadcast landmark), NOT a private residence.
+// (or overridden from localStorage). The first entry always represents
+// "Home" — the label is fixed and it reads its lat/lon from state.home
+// at render time. The default home coord is Sutro Tower (a public SF
+// broadcast landmark), never a private residence.
 export const DEFAULT_FOCUS_RING: FocusPoint[] = [
-  { label: "Sutro", lat: 37.7552, lon: -122.4528, defaultRangeIdx: 1, isHome: true  },
+  { label: "Home",  lat: 37.7552, lon: -122.4528, defaultRangeIdx: 1, isHome: true  },
   { label: "SFO",   lat: 37.6188, lon: -122.3750, defaultRangeIdx: 1, isHome: false },
   { label: "OAK",   lat: 37.7213, lon: -122.2214, defaultRangeIdx: 1, isHome: false },
   { label: "SJC",   lat: 37.3639, lon: -121.9289, defaultRangeIdx: 1, isHome: false },
@@ -121,7 +123,7 @@ const loadedFocus = loadJson(LS_KEYS.focus, DEFAULT_FOCUS_RING, isFocusRing);
 
 // If the persisted ring's first entry isn't a home slot, prepend one so
 // the "Home" cycle position always exists. isHome=true entries have their
-// live lat/lon overwritten from state.home at render time.
+// label + lat/lon overwritten from state.home at render time.
 if (!loadedFocus[0]?.isHome) {
   loadedFocus.unshift({
     label: "Home", lat: loadedHome.lat, lon: loadedHome.lon,
@@ -129,7 +131,9 @@ if (!loadedFocus[0]?.isHome) {
   });
 }
 
-// The isHome slot always tracks the current home location.
+// The isHome slot always tracks the current home location and is always
+// labeled "Home" (never a place name like the old "Sutro").
+loadedFocus[0].label = "Home";
 loadedFocus[0].lat = loadedHome.lat;
 loadedFocus[0].lon = loadedHome.lon;
 
@@ -200,7 +204,11 @@ export function setView(v: ViewMode): void {
 }
 
 export function toggleView(): void {
-  state.view = state.view === "radar" ? "weather" : "radar";
+  // Cycle: radar → weather → cockpit → radar. Kept for keyboard tests /
+  // future toggle wiring; the actual tap dispatcher lives in main.ts.
+  if      (state.view === "radar")   state.view = "weather";
+  else if (state.view === "weather") state.view = "cockpit";
+  else                               state.view = "radar";
   notify();
 }
 

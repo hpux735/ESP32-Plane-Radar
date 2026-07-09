@@ -1,7 +1,7 @@
-// Typeahead search + selection over the compact airport_index payload.
+// Substring search over the compact airport_index payload.
+// Used by the airport typeahead in web/src/settings.ts.
 
 import type { AirportIndexRow } from "./data";
-import { setCenter } from "./state";
 
 // Case-insensitive substring match on ICAO, IATA, city, or name.
 // Ranks exact prefix matches on ICAO/IATA first, then substring hits,
@@ -30,84 +30,4 @@ export function search(index: AirportIndexRow[], query: string, limit = 8): Airp
   }
   scored.sort((a, b) => b[0] - a[0]);
   return scored.slice(0, limit).map(([, row]) => row);
-}
-
-interface MountOpts {
-  input: HTMLInputElement;
-  results: HTMLElement;
-  index: AirportIndexRow[];
-  onSelected: () => void;
-}
-
-// Wire the typeahead: input events populate the results list, clicks
-// select an airport (via setCenter), Enter picks the first match.
-export function mountTypeahead(opts: MountOpts): void {
-  const { input, results, index, onSelected } = opts;
-  let focusIdx = -1;
-  let current: AirportIndexRow[] = [];
-
-  function render() {
-    results.innerHTML = "";
-    focusIdx = -1;
-    for (let i = 0; i < current.length; i++) {
-      const row = current[i];
-      const [icao, iata, city, name] = row;
-      const li = document.createElement("li");
-      li.setAttribute("role", "option");
-      li.innerHTML =
-        `<span class="icao">${icao}${iata ? " · " + iata : ""}</span>` +
-        `${city ? city + " — " : ""}${name}`;
-      li.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        pick(row);
-      });
-      results.appendChild(li);
-    }
-    results.hidden = current.length === 0;
-  }
-
-  function pick(row: AirportIndexRow) {
-    const [icao, iata, city, name, lat, lon] = row;
-    void iata; void name; void city;
-    setCenter(lat, lon, icao);
-    input.value = icao;
-    results.hidden = true;
-    onSelected();
-  }
-
-  function selectAt(i: number) {
-    const items = Array.from(results.querySelectorAll("li"));
-    if (focusIdx >= 0 && items[focusIdx]) {
-      items[focusIdx].removeAttribute("aria-selected");
-    }
-    focusIdx = Math.max(0, Math.min(items.length - 1, i));
-    if (items[focusIdx]) {
-      items[focusIdx].setAttribute("aria-selected", "true");
-      items[focusIdx].scrollIntoView({ block: "nearest" });
-    }
-  }
-
-  input.addEventListener("input", () => {
-    current = search(index, input.value);
-    render();
-  });
-  input.addEventListener("focus", () => {
-    if (current.length > 0) results.hidden = false;
-  });
-  input.addEventListener("blur", () => {
-    // Delay so a click can register.
-    setTimeout(() => (results.hidden = true), 120);
-  });
-  input.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowDown") { e.preventDefault(); selectAt(focusIdx + 1); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); selectAt(focusIdx - 1); }
-    else if (e.key === "Enter") {
-      e.preventDefault();
-      const pickIdx = focusIdx >= 0 ? focusIdx : 0;
-      if (current[pickIdx]) pick(current[pickIdx]);
-    } else if (e.key === "Escape") {
-      results.hidden = true;
-      input.blur();
-    }
-  });
 }
