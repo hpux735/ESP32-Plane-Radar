@@ -18,7 +18,24 @@ import { segmentOnScreen } from "./projection";
 
 const PROJECTION_PX = 108;
 const LABEL_MARGIN_PX = 14;
-const MIN_SEP_PX = 22;
+
+// Per-station AABB used for label collision — mirrors weather_map.cpp.
+// Horizontal half-width is measured from the real label glyphs (varies
+// per ICAO); vertical extent covers the dot plus the stacked label.
+// Labels are wider than tall, so an isotropic min-sep pushes vertical
+// pairs too far while horizontal chains (PAO/NUQ/SJC) still crash.
+const DOT_RADIUS_PX = 4;
+const LABEL_HEIGHT_PX = 14;
+const LABEL_OFFSET_PX = 6;   // label top offset below dot center
+const FOOTPRINT_PAD_PX = 2;
+const STATION_HALF_H =
+  Math.round((DOT_RADIUS_PX + LABEL_OFFSET_PX + LABEL_HEIGHT_PX +
+              DOT_RADIUS_PX) / 2) + FOOTPRINT_PAD_PX;
+const LABEL_FONT = "bold 12px system-ui, sans-serif";
+
+function displayIcao(icao: string): string {
+  return icao.startsWith("K") ? icao.slice(1) : icao;
+}
 
 interface Fit {
   centerLat: number;
@@ -57,25 +74,44 @@ function project(fit: Fit, lat: number, lon: number): [number, number] {
   ];
 }
 
-// Simple iterative relaxation — pushes overlapping dots apart along
-// their connecting axis. 4 passes handles chains like PAO-NUQ-SJC.
-function placeStations(fit: Fit): [number, number][] {
+// Iterative relaxation on axis-aligned dot+label footprints. Pushes
+// each overlapping pair along the axis of minimum penetration so
+// vertical pairs (OAK/HWD) get a small y-nudge while horizontal chains
+// (PAO/NUQ/SJC) get a bigger x-nudge. ctx must already have LABEL_FONT
+// applied so measureText matches what drawStations() renders.
+function placeStations(
+  ctx: CanvasRenderingContext2D,
+  fit: Fit,
+): [number, number][] {
   const positions = STATIONS.map((s) => project(fit, s.lat, s.lon));
-  for (let pass = 0; pass < 4; pass++) {
+  const halfW = STATIONS.map((s) => {
+    const w = ctx.measureText(displayIcao(s.icao)).width;
+    return Math.max(DOT_RADIUS_PX, Math.round(w / 2)) + FOOTPRINT_PAD_PX;
+  });
+  // 8 passes: axis-aware pushes converge more slowly when a station is
+  // boxed in on two sides, but 8 still costs nothing for 11 stations.
+  for (let pass = 0; pass < 8; pass++) {
     let moved = false;
     for (let i = 0; i < positions.length; i++) {
       for (let j = i + 1; j < positions.length; j++) {
         const dx = positions[j][0] - positions[i][0];
         const dy = positions[j][1] - positions[i][1];
-        const d = Math.sqrt(dx * dx + dy * dy);
-        if (d >= MIN_SEP_PX) continue;
-        const ux = d > 0.01 ? dx / d : 1;
-        const uy = d > 0.01 ? dy / d : 0;
-        const push = (MIN_SEP_PX - d) * 0.5 + 0.5;
-        positions[i][0] -= Math.round(ux * push);
-        positions[i][1] -= Math.round(uy * push);
-        positions[j][0] += Math.round(ux * push);
-        positions[j][1] += Math.round(uy * push);
+        const needX = halfW[i] + halfW[j];
+        const needY = 2 * STATION_HALF_H;
+        const ox = needX - Math.abs(dx);
+        const oy = needY - Math.abs(dy);
+        if (ox <= 0 || oy <= 0) continue;
+        if (ox <= oy) {
+          const sign = dx >= 0 ? 1 : -1;
+          const push = Math.ceil(ox / 2);
+          positions[i][0] -= sign * push;
+          positions[j][0] += sign * push;
+        } else {
+          const sign = dy >= 0 ? 1 : -1;
+          const push = Math.ceil(oy / 2);
+          positions[i][1] -= sign * push;
+          positions[j][1] += sign * push;
+        }
         moved = true;
       }
     }
@@ -151,24 +187,19 @@ function drawStations(
   ctx: CanvasRenderingContext2D,
   positions: [number, number][],
 ): void {
-  ctx.font = "bold 12px system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
   for (let i = 0; i < STATIONS.length; i++) {
     const [x, y] = positions[i];
     if (!insideDisc(x, y)) continue;
     const s = STATIONS[i];
     ctx.fillStyle = categoryColor(s.category);
     ctx.beginPath();
-    ctx.arc(x, y, 4, 0, Math.PI * 2);
+    ctx.arc(x, y, DOT_RADIUS_PX, 0, Math.PI * 2);
     ctx.fill();
     ctx.strokeStyle = COLORS.background;
     ctx.lineWidth = 1;
     ctx.stroke();
-    // ICAO without leading K.
-    const label = s.icao.startsWith("K") ? s.icao.slice(1) : s.icao;
     ctx.fillStyle = COLORS.label;
-    ctx.fillText(label, x, y + 6);
+    ctx.fillText(displayIcao(s.icao), x, y + LABEL_OFFSET_PX);
   }
 }
 
@@ -185,12 +216,20 @@ export function drawWeatherView(
   data: MapData,
 ): void {
   const fit = computeFit();
-  const positions = placeStations(fit);
+  // Set label font once — placeStations measures glyphs with it and
+  // drawStations paints with it. Keeps the two paths from drifting.
+  ctx.font = LABEL_FONT;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const positions = placeStations(ctx, fit);
   ctx.fillStyle = COLORS.background;
   ctx.fillRect(0, 0, SIZE, SIZE);
   drawLand(ctx, fit, data);
   drawCoast(ctx, fit, data);
   drawFreshness(ctx);
+  ctx.font = LABEL_FONT;   // drawFreshness stomps the font
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
   drawStations(ctx, positions);
   drawBezelMask(ctx);
 }

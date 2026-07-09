@@ -37,12 +37,26 @@ float s_px_per_km  = 1.0f;
 constexpr size_t kMaxStations = 32;
 int s_sx[kMaxStations] = {0};
 int s_sy[kMaxStations] = {0};
+int s_half_w[kMaxStations] = {0};  // measured from the real label glyphs
 
-// Minimum center-to-center pixel separation for two station dots. Below
-// this the pair is nudged apart along their connecting axis. Sized so
-// two dots + their labels don't step on each other at the current text
-// setting.
-constexpr int kMinSepPx = 22;
+// Per-station AABB used for label collision. Horizontal half-width is
+// measured from the actual rendered label (varies per ICAO — 'W' is
+// nearly 2× 'I'). Vertical extent covers the dot on top plus the label
+// stacked below. Labels are wider than tall, so an isotropic min-sep
+// pushes vertical pairs too far while horizontal pairs (PAO/NUQ/SJC)
+// still crash.
+constexpr int kDotRadiusPx    = 4;
+constexpr int kLabelHeightPx  = 14;
+constexpr int kLabelOffsetPx  = 8;   // label baseline offset below dot center
+constexpr int kFootprintPadPx = 2;
+
+constexpr int kStationHalfH =
+    (kDotRadiusPx + kLabelOffsetPx + kLabelHeightPx + kDotRadiusPx) / 2 +
+    kFootprintPadPx;
+
+const char* displayIcao(const char* icao) {
+  return (icao[0] == 'K' && icao[1]) ? icao + 1 : icao;
+}
 
 void computeFit() {
   const services::weather::Station* st = services::weather::stations();
@@ -153,35 +167,46 @@ void drawCoast(lgfx::LGFXBase& gfx) {
   }
 }
 
-// Project every station, then relax overlapping pairs by pushing them
-// apart along the connecting axis. A few iterations is enough for the
-// small fixed station set (the weather view isn't for navigation, so
-// slight offset from true position reads fine).
-void placeStations() {
+// Project every station, measure its rendered label width, then relax
+// overlapping pairs so their AABBs (dot + label) don't touch. Push each
+// pair along the axis of *minimum penetration* — labels are wider than
+// tall, so a vertical pair (OAK above HWD) needs only a small nudge
+// while a horizontal chain (PAO/NUQ/SJC) needs a bigger one. gfx must
+// already have the display font loaded and text size set to what
+// drawStations() will render, since we measure via textWidth().
+void placeStations(lgfx::LGFXBase& gfx) {
   const services::weather::Station* stations = services::weather::stations();
   const size_t n = services::weather::stationCount();
   for (size_t i = 0; i < n && i < kMaxStations; ++i) {
     projectLatLon(stations[i].lat, stations[i].lon, &s_sx[i], &s_sy[i]);
+    const int label_w = gfx.textWidth(displayIcao(stations[i].icao));
+    s_half_w[i] = std::max(kDotRadiusPx, label_w / 2) + kFootprintPadPx;
   }
-  // Simple iterative relaxation. 4 passes handles chains like PAO-NUQ-SJC
-  // without ping-ponging.
-  for (int pass = 0; pass < 4; ++pass) {
+  // 8 passes: axis-aware pushes converge more slowly than isotropic ones
+  // when a station is boxed in on two sides, but 8 still costs nothing
+  // for 11 stations.
+  for (int pass = 0; pass < 8; ++pass) {
     bool moved = false;
     for (size_t i = 0; i < n && i < kMaxStations; ++i) {
       for (size_t j = i + 1; j < n && j < kMaxStations; ++j) {
-        const float dx = static_cast<float>(s_sx[j] - s_sx[i]);
-        const float dy = static_cast<float>(s_sy[j] - s_sy[i]);
-        const float d  = std::sqrt(dx * dx + dy * dy);
-        if (d >= kMinSepPx) continue;
-        // If two dots landed on the exact same pixel, pick an arbitrary
-        // direction to separate them.
-        const float ux = (d > 0.01f) ? (dx / d) : 1.0f;
-        const float uy = (d > 0.01f) ? (dy / d) : 0.0f;
-        const float push = (kMinSepPx - d) * 0.5f + 0.5f;
-        s_sx[i] -= static_cast<int>(std::lroundf(ux * push));
-        s_sy[i] -= static_cast<int>(std::lroundf(uy * push));
-        s_sx[j] += static_cast<int>(std::lroundf(ux * push));
-        s_sy[j] += static_cast<int>(std::lroundf(uy * push));
+        const int dx = s_sx[j] - s_sx[i];
+        const int dy = s_sy[j] - s_sy[i];
+        const int need_x = s_half_w[i] + s_half_w[j];
+        const int need_y = 2 * kStationHalfH;
+        const int ox = need_x - std::abs(dx);
+        const int oy = need_y - std::abs(dy);
+        if (ox <= 0 || oy <= 0) continue;
+        if (ox <= oy) {
+          const int sign = (dx >= 0) ? 1 : -1;
+          const int push = (ox + 1) / 2;
+          s_sx[i] -= sign * push;
+          s_sx[j] += sign * push;
+        } else {
+          const int sign = (dy >= 0) ? 1 : -1;
+          const int push = (oy + 1) / 2;
+          s_sy[i] -= sign * push;
+          s_sy[j] += sign * push;
+        }
         moved = true;
       }
     }
@@ -189,12 +214,18 @@ void placeStations() {
   }
 }
 
-void drawStations(lgfx::LGFXBase& gfx) {
-  const services::weather::Station* stations = services::weather::stations();
-  const size_t n = services::weather::stationCount();
+// Configures gfx with the label font/size that both placeStations() (for
+// textWidth measurements) and drawStations() (for the actual drawString)
+// need. Keeps the two paths from drifting.
+void configureLabelFont(lgfx::LGFXBase& gfx) {
   displayFontEnsureLoaded(gfx);
   gfx.setTextSize(0.80f);
   gfx.setTextDatum(textdatum_t::top_center);
+}
+
+void drawStations(lgfx::LGFXBase& gfx) {
+  const services::weather::Station* stations = services::weather::stations();
+  const size_t n = services::weather::stationCount();
 
   for (size_t i = 0; i < n && i < kMaxStations; ++i) {
     const int sx = s_sx[i];
@@ -205,11 +236,8 @@ void drawStations(lgfx::LGFXBase& gfx) {
     gfx.fillCircle(sx, sy, 4, color);
     gfx.drawCircle(sx, sy, 4, radar::kColorBackground);  // subtle outline
 
-    // ICAO label above the dot (drop the leading K).
-    const char* id = stations[i].icao;
-    if (id[0] == 'K' && id[1]) id++;
     gfx.setTextColor(radar::kColorLabel, radar::kColorBackground);
-    gfx.drawString(id, sx, sy + 8);
+    gfx.drawString(displayIcao(stations[i].icao), sx, sy + 8);
   }
 }
 
@@ -244,8 +272,6 @@ void refresh() {
 }
 
 void draw() {
-  computeFit();
-  placeStations();
   // Composite into the shared 240×240 sprite, then blit in a single
   // pushSprite. Drawing straight to the panel every ~1 s (as the
   // freshness updater does) produces a visible ~1 Hz flash — the
@@ -253,10 +279,14 @@ void draw() {
   LGFX_Sprite* sp = radarDisplayFrameSprite();
   lgfx::LGFXBase& gfx = sp ? static_cast<lgfx::LGFXBase&>(*sp)
                            : static_cast<lgfx::LGFXBase&>(tft);
+  computeFit();
+  configureLabelFont(gfx);   // must be set before placeStations() measures
+  placeStations(gfx);
   gfx.fillScreen(radar::kColorBackground);
   drawLand(gfx);
   drawCoast(gfx);
   drawFreshness(gfx);
+  configureLabelFont(gfx);   // drawFreshness stomps text size
   drawStations(gfx);
   // Bezel mask — same as the radar view. Keeps SDL visually matched to
   // the round physical panel.
