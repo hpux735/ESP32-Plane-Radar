@@ -69,6 +69,16 @@ RUNWAYS_URL = (
 
 LAKES_URL = ne_url("10m", "lakes")
 
+# OSM-derived coastline data, pre-processed by osmdata.openstreetmap.de
+# into a global WGS84 shapefile. Much higher fidelity than Natural
+# Earth (which caps at ~10 m per continent but only records ~50 total
+# points of Manhattan). We download the ~1 GB zip once, cache the
+# extracted shapefile under .local-data, and clip in build_coastline_osm().
+OSM_COASTLINE_URL = "https://osmdata.openstreetmap.de/download/coastlines-split-4326.zip"
+OSM_COASTLINE_ZIP = CACHE_DIR / "coastlines-split-4326.zip"
+OSM_COASTLINE_DIR = CACHE_DIR / "coastlines-split-4326"
+OSM_COASTLINE_SHP = OSM_COASTLINE_DIR / "lines"  # base path (pyshp adds .shp)
+
 CACHE_MAP = {
     "coastline": (COASTLINE_URL, CACHE_DIR / "ne_10m_coastline.geojson"),
     "land": (LAND_URL, CACHE_DIR / "ne_10m_land.geojson"),
@@ -179,6 +189,53 @@ def round_pt(p, decimals=5):
 # ---------------------------------------------------------------------------
 # Coastline
 # ---------------------------------------------------------------------------
+
+
+def _ensure_osm_coastline() -> Path | None:
+    """Download + unzip the ~1 GB OSM coastline shapefile bundle once
+    and cache it under .local-data/. Returns the shapefile base path
+    (without extension) that pyshp expects, or None if pyshp isn't
+    installed."""
+    try:
+        import shapefile  # noqa: F401  (pyshp)
+    except ImportError:
+        print("pyshp not installed — falling back to Natural Earth for coastline.\n"
+              "  pip install --break-system-packages pyshp",
+              file=sys.stderr)
+        return None
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    if not OSM_COASTLINE_SHP.with_suffix(".shp").exists():
+        if not OSM_COASTLINE_ZIP.exists():
+            print(f"downloading {OSM_COASTLINE_URL} (~900 MB, one-time)",
+                  file=sys.stderr)
+            urllib.request.urlretrieve(OSM_COASTLINE_URL, OSM_COASTLINE_ZIP)
+        print("unzipping OSM coastline bundle", file=sys.stderr)
+        import zipfile
+        with zipfile.ZipFile(OSM_COASTLINE_ZIP) as z:
+            z.extractall(CACHE_DIR)
+    return OSM_COASTLINE_SHP
+
+
+def build_coastline_osm(bbox, tol_deg):
+    """Higher-fidelity coastline from pre-processed OSM data. Falls back
+    to build_coastline() (Natural Earth) if pyshp isn't installed."""
+    base = _ensure_osm_coastline()
+    if base is None:
+        return build_coastline(bbox, tol_deg=tol_deg)
+    import shapefile  # noqa
+    r = shapefile.Reader(str(base))
+    out = []
+    for i in range(len(r)):
+        sh = r.shape(i)
+        lonmin, latmin, lonmax, latmax = sh.bbox
+        if latmax < bbox[0] or latmin > bbox[1]: continue
+        if lonmax < bbox[2] or lonmin > bbox[3]: continue
+        pts = list(sh.points)
+        simplified = dp_simplify(pts, tol_deg)
+        if len(simplified) >= 2:
+            out.append([round_pt(p) for p in simplified])
+    r.close()
+    return out
 
 
 def build_coastline(bbox, tol_deg=0.002):
@@ -526,9 +583,12 @@ def build_conus() -> None:
     # Florida to northern Minnesota, coast to coast. Includes a bit of
     # southern Canada to catch the Great Lakes properly.
     conus_bbox = (24.0, 50.0, -125.0, -66.0)
-    # Tolerance target ≈ 500 m = the pixel size at the widest range
-    # preset on a 240 px canvas.
-    coast = build_coastline(conus_bbox, tol_deg=0.005)
+    # Coastline is OSM-derived at ~17 m tolerance — the highest fidelity
+    # we can ship without exceeding Cloudflare Workers' 25 MiB per-file
+    # limit for static assets. Manhattan clearly narrows toward the top,
+    # Miami Beach is a barrier island, Cape Cod is Cape-Cod-shaped.
+    # ~23 MB raw / 6 MB gzipped.
+    coast = build_coastline_osm(conus_bbox, tol_deg=0.00015)
     emit(OUT_DIR / "coastline_conus.json", coast)
     # Land + minor islands + lakes (Great Lakes, Salton Sea, etc.) all
     # emitted into land_conus as triangles. The renderer just paints
