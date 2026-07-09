@@ -33,17 +33,36 @@ async function handleAdsb(url: URL): Promise<Response> {
   if (nm <= 0 || nm > 250) {
     return json({ error: "nm out of range" }, 400);
   }
-  const upstream =
-    `https://opendata.adsb.fi/api/v3/lat/${lat.toFixed(4)}/` +
-    `lon/${lon.toFixed(4)}/dist/${nm.toFixed(1)}`;
-  const resp = await fetch(upstream, {
-    headers: { "User-Agent": "plane-radar-web (github.com/benyaffe/ESP32-Plane-Radar)" },
+  // Both endpoints return the same schema (opendata network peers).
+  // adsb.fi blocks Cloudflare Worker IPs (403); airplanes.live doesn't.
+  // Fall back to adsb.fi only if the primary fails so we still route to
+  // both when useful.
+  const urls = [
+    `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/${nm.toFixed(1)}`,
+    `https://opendata.adsb.fi/api/v3/lat/${lat.toFixed(4)}/lon/${lon.toFixed(4)}/dist/${nm.toFixed(1)}`,
+  ];
+  const fetchOpts: RequestInit = {
+    headers: {
+      "User-Agent": "plane-radar-web (github.com/benyaffe/ESP32-Plane-Radar)",
+      Accept: "application/json",
+    },
     // Edge cache upstream responses briefly so multiple browsers hitting
     // the same center don't hammer the source.
     cf: { cacheTtl: 5, cacheEverything: true } as RequestInitCfProperties,
-  });
-  if (!resp.ok) {
-    return json({ error: `upstream ${resp.status}` }, 502);
+  };
+  let resp: Response | null = null;
+  let lastStatus = 0;
+  for (const upstream of urls) {
+    try {
+      const r = await fetch(upstream, fetchOpts);
+      if (r.ok) { resp = r; break; }
+      lastStatus = r.status;
+    } catch {
+      lastStatus = 599;
+    }
+  }
+  if (!resp) {
+    return json({ error: `upstream ${lastStatus}` }, 502);
   }
   const body = await resp.text();
   return new Response(body, {
