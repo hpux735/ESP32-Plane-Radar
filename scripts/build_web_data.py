@@ -381,6 +381,11 @@ AIRPORT_TIER = {
     "small_airport": 1,
 }
 
+# Small airports we force-include for the Bay Area focus ring (they
+# won't otherwise pass the "scheduled service" filter). Extend if the
+# firmware's focus ring changes.
+FORCE_INCLUDE_ICAO = {"KHAF", "KHWD", "KSQL", "KPAO", "KNUQ", "KRHV", "KCCR", "KLVK", "KAPC"}
+
 
 def _is_h_designator(s: str) -> bool:
     if not s or s[0] != "H":
@@ -438,12 +443,13 @@ def build_airports(bbox):
         # farmland fields with no scheduled service; not useful for a
         # spectator preview.
         tier = AIRPORT_TIER.get(atype, 0)
-        keep = tier >= 2 or (tier == 1 and a.get("scheduled_service") == "yes")
-        if not keep:
-            continue
         ident = (a.get("ident") or "").strip()
         if len(ident) != 4 or ident[0] != "K":
             continue  # CONUS scope (K-prefixed ICAOs)
+        force = ident in FORCE_INCLUDE_ICAO
+        keep = force or tier >= 2 or (tier == 1 and a.get("scheduled_service") == "yes")
+        if not keep:
+            continue
         try:
             lat = float(a["latitude_deg"])
             lon = float(a["longitude_deg"])
@@ -505,37 +511,26 @@ def emit(path: Path, payload) -> None:
     print(f"wrote {path.relative_to(ROOT)} ({size/1024:.1f} KB)", file=sys.stderr)
 
 
-def build_conus(res: str = "50m") -> None:
-    """Bake CONUS-wide layers at a coarser resolution so ANY US airport
-    the user picks in the typeahead gets some map context. Emitted with
-    a _conus suffix so the client can load them as a base and layer the
-    Bay-Area 10m detail over them where available."""
-    global CACHE_MAP
-    saved = dict(CACHE_MAP)
-    CACHE_MAP = {
-        "coastline": (ne_url(res, "coastline"), CACHE_DIR / f"ne_{res}_coastline.geojson"),
-        "land":      (ne_url(res, "land"),      CACHE_DIR / f"ne_{res}_land.geojson"),
-        # 50m has no minor_islands layer; skip cleanly if absent.
-        "islands":   (ne_url(res, "minor_islands"), CACHE_DIR / f"ne_{res}_minor_islands.geojson"),
-        "roads":     (ne_url(res, "roads"),     CACHE_DIR / f"ne_{res}_roads.geojson"),
-    }
-    # CONUS bbox: (min_lat, max_lat, min_lon, max_lon) — approximately
-    # southern tip of Florida to northern Minnesota, coast to coast.
+def build_conus() -> None:
+    """Bake CONUS-wide base layers so ANY US airport the user picks in
+    the typeahead gets a legible map. Uses the same 10 m Natural Earth
+    sources as the Bay Area bakes, but simplified harder to keep the
+    payload down. High-detail Bay Area layers are still layered on top
+    when the current center falls inside the Bay bbox — see
+    selectMap() in web/src/data.ts."""
+    # CONUS bbox: (min_lat, max_lat, min_lon, max_lon) — southern tip of
+    # Florida to northern Minnesota, coast to coast.
     conus_bbox = (24.0, 50.0, -125.0, -66.0)
-    # At CONUS scale we simplify harder — 0.02° ≈ 2 km, still fine at
-    # the site's radar zoom.
-    try:
-        coast = build_coastline(conus_bbox, tol_deg=0.02)
-        emit(OUT_DIR / "coastline_conus.json", coast)
-        land = build_land(conus_bbox, tol_deg=0.02)
-        emit(OUT_DIR / "land_conus.json", land)
-        # Keep just Major Highway at CONUS scope — Secondary would flood
-        # the payload.
-        roads = build_roads(conus_bbox, tol_deg=0.005,
-                            keep_types=("Major Highway",))
-        emit(OUT_DIR / "roads_conus.json", roads)
-    finally:
-        CACHE_MAP = saved
+    # 10 m sources, simplified aggressively: ~2 km tolerance for the
+    # coastline (still legible on the 240 px canvas at range 25 nm),
+    # ~1 km for major roads.
+    coast = build_coastline(conus_bbox, tol_deg=0.02)
+    emit(OUT_DIR / "coastline_conus.json", coast)
+    land = build_land(conus_bbox, tol_deg=0.05)
+    emit(OUT_DIR / "land_conus.json", land)
+    roads = build_roads(conus_bbox, tol_deg=0.01,
+                        keep_types=("Major Highway",))
+    emit(OUT_DIR / "roads_conus.json", roads)
 
 
 def main() -> None:

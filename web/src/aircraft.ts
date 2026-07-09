@@ -101,6 +101,7 @@ function normalize(raw: AdsbRawAircraft): Aircraft | null {
 let s_aircraft: Aircraft[] = [];
 let s_lastUpdateMs = 0;
 let s_lastError: string | null = null;
+let s_fetchCount = 0;
 
 export function aircraft(): readonly Aircraft[] {
   return s_aircraft;
@@ -108,6 +109,10 @@ export function aircraft(): readonly Aircraft[] {
 
 export function lastUpdateMs(): number {
   return s_lastUpdateMs;
+}
+
+export function fetchCount(): number {
+  return s_fetchCount;
 }
 
 export function lastError(): string | null {
@@ -119,11 +124,14 @@ export async function fetchAircraft(
   centerLon: number,
   nm: number,
 ): Promise<void> {
+  // cache: 'no-store' so the browser doesn't reuse a stale copy after
+  // the Worker's short edge-cache window. Aircraft are moving; the API
+  // is our single source of freshness.
   const url =
     `api/adsb?lat=${centerLat.toFixed(4)}` +
     `&lon=${centerLon.toFixed(4)}&nm=${nm.toFixed(1)}`;
   try {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { cache: "no-store" });
     if (!resp.ok) {
       s_lastError = `HTTP ${resp.status}`;
       return;
@@ -137,6 +145,7 @@ export async function fetchAircraft(
     s_aircraft = list;
     s_lastUpdateMs = Date.now();
     s_lastError = null;
+    s_fetchCount += 1;
   } catch (err) {
     s_lastError = err instanceof Error ? err.message : String(err);
   }

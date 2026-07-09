@@ -16,28 +16,36 @@ export const RANGE_PRESETS = [
 
 export const KM_PER_DEG = 111.0;
 
-// RGB CSS colors — the browser handles color directly, so we skip the
-// 565 conversion path the firmware uses on GC9A01.
-//
-// Convention: WATER is the visibly-tinted surface (dark blue), LAND is
-// near-black. Reads as "black continent floating in dim ocean" — the
-// bay/ocean pops as the recognizable Bay Area shape.
+// RGB CSS colors — mirrored exactly from include/ui/radar_theme.h so
+// the browser render matches the firmware/SDL panel pixel for pixel.
+// Convention here follows the firmware: BACKGROUND is the deeper dark,
+// LAND is a slightly lighter tint on top. Reads as "dim navy sea with
+// slightly-lighter landmass" — same as hardware.
 export const COLORS = {
-  background:      "rgb(12, 20, 36)",       // water (dim blue tint)
-  grid:            "rgb(16, 101, 33)",
+  background:      "rgb(4, 10, 28)",        // kBg — deep navy
+  grid:            "rgb(16, 100, 32)",
   label:           "rgb(255, 255, 255)",
-  aircraft:        "rgb(60, 130, 255)",
-  trackVector:     "rgb(230, 230, 230)",
-  tagType:         "rgb(80, 190, 255)",
-  tagAltitude:     "rgb(255, 240, 100)",
-  runway:          "rgb(70, 170, 200)",
-  runwayLabel:     "rgb(110, 210, 240)",
-  land:            "rgb(4, 10, 28)",        // near-black land
+  aircraft:        "rgb(255, 0, 0)",        // kAircraft — red icon
+  trackVector:     "rgb(255, 0, 255)",      // kTrack — magenta speed line
+  tagType:         "rgb(255, 200, 0)",      // kTagType — yellow-orange
+  tagAltitude:     "rgb(90, 200, 255)",     // kTagAlt — light blue
+  runway:          "rgb(56, 150, 170)",
+  runwayLabel:     "rgb(110, 210, 230)",
+  land:            "rgb(12, 20, 36)",       // kLand — subtle land tint
   coastline:       "rgb(44, 70, 68)",       // subtle teal border
   road:            "rgb(110, 110, 130)",
   emergency:       "rgb(255, 0, 0)",
   centerDot:       "rgb(255, 255, 255)",
 } as const;
+
+// Track vector length constants — mirror firmware:
+//   speedLineLengthPx = gs_kt · (km/kt/hr · 60s/3600) · 107px / 13.3km · 1.5/5
+// which yields a 60-second-ahead vector at the "reference" 13.3 km outer,
+// scaled 30% down for readability. Same formula, same numbers.
+export const TRACK_HORIZON_SEC = 60.0;
+export const TRACK_REF_OUTER_KM = 13.3;
+export const TRACK_LENGTH_SCALE = 1.5 / 5.0;
+export const TRACK_MIN_PX = 2;
 
 // Weather-view category colors — match src/ui/weather_map.cpp.
 export const WX_COLORS = {

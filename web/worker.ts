@@ -46,9 +46,9 @@ async function handleAdsb(url: URL): Promise<Response> {
       "User-Agent": "plane-radar-web (github.com/benyaffe/ESP32-Plane-Radar)",
       Accept: "application/json",
     },
-    // Edge cache upstream responses briefly so multiple browsers hitting
-    // the same center don't hammer the source.
-    cf: { cacheTtl: 5, cacheEverything: true } as RequestInitCfProperties,
+    // Edge cache is set to 1 s — enough to dedupe simultaneous clients,
+    // short enough that aircraft don't visibly freeze between polls.
+    cf: { cacheTtl: 1, cacheEverything: true } as RequestInitCfProperties,
   };
   let resp: Response | null = null;
   let lastStatus = 0;
@@ -70,7 +70,9 @@ async function handleAdsb(url: URL): Promise<Response> {
     headers: {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
-      "Cache-Control": "public, max-age=3",
+      // Client tells the browser not to cache — the ADS-B poll drives
+      // its own 3 s cadence and shouldn't be second-guessed.
+      "Cache-Control": "no-store",
     },
   });
 }

@@ -13,7 +13,7 @@ import {
   SIZE,
 } from "./theme";
 import { state, currentOuterKm, currentRangeLabel } from "./state";
-import { aircraft } from "./aircraft";
+import { aircraft, fetchCount } from "./aircraft";
 import { drawAircraft } from "./aircraftView";
 
 // ---------------------------------------------------------------------------
@@ -117,13 +117,13 @@ function drawRings(ctx: CanvasRenderingContext2D): void {
 
 function drawRunways(ctx: CanvasRenderingContext2D, view: ViewFrame, data: MapData): void {
   if (!state.layers.runways) return;
-  // Large airports at all zooms; medium airports only when zoomed in.
-  const minTier = view.outerKm > 20 ? 3 : 2;
+  // Show any airport in the current disc regardless of tier — small
+  // GA fields (HAF, HWD, SQL, PAO, RHV, NUQ) are exactly what the
+  // desk toy audience wants to see, and the disc naturally clips.
   ctx.strokeStyle = COLORS.runway;
   ctx.lineWidth = 2;
   ctx.beginPath();
   for (const [, apt] of Object.entries(data.airports)) {
-    if (apt.tier < minTier) continue;
     for (const rw of apt.runways) {
       const [x1, y1] = project(view, rw.lat1, rw.lon1);
       const [x2, y2] = project(view, rw.lat2, rw.lon2);
@@ -133,13 +133,11 @@ function drawRunways(ctx: CanvasRenderingContext2D, view: ViewFrame, data: MapDa
     }
   }
   ctx.stroke();
-  // Labels
   ctx.font = "10px system-ui, sans-serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   ctx.fillStyle = COLORS.runwayLabel;
   for (const [icao, apt] of Object.entries(data.airports)) {
-    if (apt.tier < minTier) continue;
     const [x, y] = project(view, apt.lat, apt.lon);
     if (distSqFromCenter(x, y) > GRID_OUTER_RADIUS * GRID_OUTER_RADIUS) continue;
     ctx.fillText(icao, x, y + 6);
@@ -207,7 +205,7 @@ export function renderFrame(ctx: CanvasRenderingContext2D, data: MapData): void 
   // Aircraft draw last so icons + tags sit above the map. The clip to
   // the outer disc is opened again just for icons to keep them from
   // drawing over the bezel margin (labels are OK past the ring).
-  drawAircraft(ctx, view, aircraft(), state.layers.tags);
+  drawAircraft(ctx, view, aircraft(), state.layers.tags, fetchCount());
 
   drawBezelMask(ctx);
 }
