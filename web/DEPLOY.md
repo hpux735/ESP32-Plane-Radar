@@ -105,6 +105,10 @@ Serves at `http://localhost:8787`.
   build ran outside Cloudflare (e.g. locally without `wrangler login`).
 - **Aircraft don't appear** — open browser devtools → Network → visit
   `/api/adsb?lat=37.75&lon=-122.41&nm=25`. If it 404s or 502s, check
-  the Worker's logs in the Cloudflare dashboard.
+  the Worker's logs in the Cloudflare dashboard. The specific case
+  `{"error": "upstream 403"}` means the ADS-B source is blocking
+  Cloudflare Worker IP ranges (opendata.adsb.fi does this) — the
+  Worker already falls back through a list; check that airplanes.live
+  is still first, and try adding another peer if both start blocking.
 - **Weather view says "no data"** — CORS on `api.weather.gov` works as
   of this writing. If it stops, that's on the NWS end.
