@@ -19,6 +19,7 @@ enum class Layer : uint8_t {
   Coastline,
   Land,
   Roads,          // major highways (Natural Earth 1:10m "Major/Secondary")
+  Airspace,       // FAA Class B/C/D polygon outlines
   RunwaysLarge,   // large-airport runway + label overlay
   RunwaysFocus,   // focus GA airport (SQL/HAF/PAO/HWD) when it's the focus
   AircraftTags,   // 2-line data blocks (icons + track vectors always show)

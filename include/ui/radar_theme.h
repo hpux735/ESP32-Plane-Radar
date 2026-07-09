@@ -116,4 +116,10 @@ constexpr uint8_t kRoadR = 110;
 constexpr uint8_t kRoadG = 110;
 constexpr uint8_t kRoadB = 130;
 
+/** Class B/C/D airspace outlines — sectional-chart colors: blue Bravo,
+ *  magenta Charlie, teal Delta. Dashed so they read as boundaries. */
+extern uint16_t kColorAirspaceB;
+extern uint16_t kColorAirspaceC;
+extern uint16_t kColorAirspaceD;
+
 }  // namespace ui::radar

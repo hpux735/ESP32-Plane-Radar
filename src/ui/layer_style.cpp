@@ -15,14 +15,15 @@ constexpr LayerStyle kLayerDefaults[static_cast<size_t>(Layer::kCount)] = {
     {"coastline",     true},
     {"land",          true},
     {"roads",         true},
+    {"airspace",      true},
     {"runways_large", true},
     {"runways_focus", true},
     {"aircraft_tags", true},
 };
 
 LayerStyle s_layers[static_cast<size_t>(Layer::kCount)] = {
-    kLayerDefaults[0], kLayerDefaults[1], kLayerDefaults[2],
-    kLayerDefaults[3], kLayerDefaults[4], kLayerDefaults[5],
+    kLayerDefaults[0], kLayerDefaults[1], kLayerDefaults[2], kLayerDefaults[3],
+    kLayerDefaults[4], kLayerDefaults[5], kLayerDefaults[6],
 };
 
 inline size_t idx(Layer l) { return static_cast<size_t>(l); }

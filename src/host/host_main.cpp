@@ -82,7 +82,7 @@ bool consumeShotKey() {
   return edge;
 }
 
-// Native layer toggles — 1..5 flip the corresponding layer. Each key is
+// Native layer toggles — 1..7 flip the corresponding layer. Each key is
 // bound to its own fake GPIO so the tap-edge helper can debounce it
 // cleanly the same way as the boot/screenshot keys.
 struct KeyBinding {
@@ -94,9 +94,10 @@ constexpr KeyBinding kLayerKeys[] = {
     {SDLK_1, 20, ui::layers::Layer::Coastline},
     {SDLK_2, 21, ui::layers::Layer::Land},
     {SDLK_3, 22, ui::layers::Layer::Roads},
-    {SDLK_4, 23, ui::layers::Layer::RunwaysLarge},
-    {SDLK_5, 24, ui::layers::Layer::RunwaysFocus},
-    {SDLK_6, 25, ui::layers::Layer::AircraftTags},
+    {SDLK_4, 23, ui::layers::Layer::Airspace},
+    {SDLK_5, 24, ui::layers::Layer::RunwaysLarge},
+    {SDLK_6, 25, ui::layers::Layer::RunwaysFocus},
+    {SDLK_7, 26, ui::layers::Layer::AircraftTags},
 };
 
 bool consumeLayerKey(const KeyBinding& kb) {
@@ -115,8 +116,8 @@ void setup() {
       "Plane Radar — SDL emulator\n"
       "  SPACE  : tap  (single = cycle range, double = cycle focus)\n"
       "  S      : save screenshot\n"
-      "  1..6   : toggle layer (coastline / land / roads / runways-large /\n"
-      "           runways-focus / aircraft-tags)\n");
+      "  1..7   : toggle layer (coastline / land / roads / airspace /\n"
+      "           runways-large / runways-focus / aircraft-tags)\n");
   bootButtonInit();
   lgfx::v1::gpio_hi(kShotFakeGpio);
   lgfx::Panel_sdl::addKeyCodeMapping(SDLK_s, kShotFakeGpio);
