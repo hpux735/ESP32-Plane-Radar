@@ -14,10 +14,20 @@ struct Rect {
 /** Clear the registry — call at the start of each full grid redraw. */
 void reset();
 
-/** Record a text bounding rect. Overlapping additions are fine. */
+/** Record a HARD text/label bounding rect. Tag placement will try very hard
+ *  not to overlap these. */
 void add(int x, int y, int w, int h);
 
-/** True if the given rect overlaps any previously-added rect. */
+/** Record a SOFT keep-out (aircraft icon, track vector endpoint, predicted
+ *  position). Tag placement prefers to dodge these too, but will accept an
+ *  overlap before overlapping a HARD rect. */
+void addSoft(int x, int y, int w, int h);
+
+/** Overlap check against HARD rects only. */
 bool intersects(int x, int y, int w, int h);
+
+/** Overlap check against HARD + SOFT rects. Used for the strict first-pass
+ *  placement search. */
+bool intersectsAny(int x, int y, int w, int h);
 
 }  // namespace ui::labels

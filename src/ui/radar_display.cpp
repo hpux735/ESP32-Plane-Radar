@@ -671,7 +671,7 @@ int tagLine2Width(const TagContent& c) {
 // twice in draw), but placement quick-rejects on the union so we don't
 // have to enumerate combinations here.
 bool tryPlaceSlot(uint8_t slot, int ax, int ay, const TagContent& c,
-                  int px, int py, TagPlacement* out) {
+                  int px, int py, TagPlacement* out, bool strict) {
   applyTagStyle();
   const int line_h = s_draw->fontHeight();
   const int l1_w = tagLine1Width(c);
@@ -702,11 +702,15 @@ bool tryPlaceSlot(uint8_t slot, int ax, int ay, const TagContent& c,
   }
   (void)px;  // predicted position keep-outs are already in labels::
   (void)py;
-  // Reject only if a filled sub-rect collides — the empty corner of the L
-  // is free real estate for other elements.
-  if (labels::intersects(line1_left, top, l1_w, line_h)) return false;
-  if (l2_w > 0 &&
-      labels::intersects(line2_left, top + line_h, l2_w, line_h)) return false;
+  // Strict pass avoids everything (labels + aircraft icons/vectors); relaxed
+  // pass only avoids labels — used as a fallback so we prefer covering an
+  // untagged aircraft icon over covering another tag.
+  auto hit = [strict](int rx, int ry, int rw, int rh) {
+    return strict ? labels::intersectsAny(rx, ry, rw, rh)
+                  : labels::intersects(rx, ry, rw, rh);
+  };
+  if (hit(line1_left, top, l1_w, line_h)) return false;
+  if (l2_w > 0 && hit(line2_left, top + line_h, l2_w, line_h)) return false;
   out->anchor_x = anchor_x;
   out->anchor_y = anchor_y;
   out->rect_x = left;
@@ -737,19 +741,30 @@ bool pickTagPlacement(const services::adsb::Aircraft& p, int ax, int ay,
       (p.callsign[0] != '\0') ? findMemory(p.callsign) : nullptr;
   uint8_t start_inner = mem ? (mem->slot % 8) : 0;
 
-  // Walk the inner ring first.
+  // Strict pass — dodge labels AND aircraft icons/vectors. Inner ring first
+  // (short leader), then outer ring (longer leader, still no overlap).
   for (int step = 0; step < 8; ++step) {
     const uint8_t slot = (start_inner + step) % 8;
-    if (tryPlaceSlot(slot, ax, ay, c, px, py, out)) return true;
+    if (tryPlaceSlot(slot, ax, ay, c, px, py, out, /*strict=*/true)) return true;
   }
-  // Outer ring fallback, same starting direction.
   for (int step = 0; step < 8; ++step) {
     const uint8_t slot = 8 + ((start_inner + step) % 8);
-    if (tryPlaceSlot(slot, ax, ay, c, px, py, out)) return true;
+    if (tryPlaceSlot(slot, ax, ay, c, px, py, out, /*strict=*/true)) return true;
   }
-  // Last resort: overlap.
-  return tryPlaceSlot(start_inner, ax, ay, c, px, py, out) ||
-         tryPlaceSlot(0, ax, ay, c, px, py, out);
+  // Relaxed pass — dodge labels only. Allow overlap with untagged aircraft
+  // icons / track vectors, per user preference: "labels cover deprioritized
+  // unlabeled aircraft rather than other labels".
+  for (int step = 0; step < 8; ++step) {
+    const uint8_t slot = (start_inner + step) % 8;
+    if (tryPlaceSlot(slot, ax, ay, c, px, py, out, /*strict=*/false)) return true;
+  }
+  for (int step = 0; step < 8; ++step) {
+    const uint8_t slot = 8 + ((start_inner + step) % 8);
+    if (tryPlaceSlot(slot, ax, ay, c, px, py, out, /*strict=*/false)) return true;
+  }
+  // Last resort — accept overlapping a label too.
+  return tryPlaceSlot(start_inner, ax, ay, c, px, py, out, /*strict=*/false) ||
+         tryPlaceSlot(0, ax, ay, c, px, py, out, /*strict=*/false);
 }
 
 // Thin leader from icon edge to the tag anchor corner so the eye can
@@ -971,21 +986,20 @@ void drawAircraft() {
     drawHeadingTriangle(x, y, planes[i].nose_deg,
                         em ? radar::kColorEmergency : radar::kColorAircraft);
     predictScreenPos(planes[i], x, y, &pred_x[d], &pred_y[d]);
-    // Icon keep-out (current position) — ~14×14 around symbol center.
-    labels::add(x - 8, y - 8, 16, 16);
-    // Track-vector endpoint keep-out — small block at the vector tip so tags
-    // don't cover the leading-edge indicator.
+    // Icon + vector endpoint + predicted position registered as SOFT keep-
+    // outs — placement prefers to dodge them but will accept an overlap
+    // rather than sitting on another tag.
+    labels::addSoft(x - 8, y - 8, 16, 16);
     const int vec_len = speedLineLengthPx(planes[i].gs_knots);
     if (vec_len > 0) {
       constexpr float kDegToRad = 3.14159265f / 180.0f;
       const float rad = planes[i].track_deg * kDegToRad;
       const int ex = x + static_cast<int>(std::lroundf(vec_len * sinf(rad)));
       const int ey = y - static_cast<int>(std::lroundf(vec_len * cosf(rad)));
-      labels::add(ex - 4, ey - 4, 8, 8);
+      labels::addSoft(ex - 4, ey - 4, 8, 8);
     }
-    // Predicted position keep-out — smaller, biased toward stability.
     if (pred_x[d] != x || pred_y[d] != y) {
-      labels::add(pred_x[d] - 6, pred_y[d] - 6, 12, 12);
+      labels::addSoft(pred_x[d] - 6, pred_y[d] - 6, 12, 12);
     }
   }
 
