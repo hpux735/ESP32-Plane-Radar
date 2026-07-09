@@ -6,3 +6,6 @@ release/
 .vscode/ipch
 .local-data/
 scripts/__pycache__/
+
+# Local Netlify folder
+.netlify
