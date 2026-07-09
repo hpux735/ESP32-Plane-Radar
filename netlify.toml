@@ -1,0 +1,26 @@
+# Netlify build config at repo root — Netlify reads this by default
+# even before it changes into a base directory. Points everything at
+# the web/ subdirectory so the whole build lives cleanly under web/.
+
+[build]
+  base = "web"
+  command = "npm install && npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[functions]
+  # Bundle the TypeScript function via esbuild so its `export default`
+  # + `export const config` work without a separate package.json.
+  node_bundler = "esbuild"
+
+# Safety net — the function at netlify/functions/adsb.ts declares its
+# own path via a `config.path` export, but some Netlify runtimes ignore
+# the export. This redirect makes /api/adsb always hit it.
+[[redirects]]
+  from = "/api/adsb"
+  to = "/.netlify/functions/adsb"
+  status = 200
+  force = true
