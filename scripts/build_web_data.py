@@ -47,22 +47,17 @@ DEFAULT_CENTER_LON = -122.409
 DEFAULT_RADIUS_KM = 200.0
 KM_PER_DEG = 111.0
 
-COASTLINE_URL = (
-    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/"
-    "geojson/ne_10m_coastline.geojson"
-)
-LAND_URL = (
-    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/"
-    "geojson/ne_10m_land.geojson"
-)
-MINOR_ISLANDS_URL = (
-    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/"
-    "geojson/ne_10m_minor_islands.geojson"
-)
-ROADS_URL = (
-    "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/"
-    "geojson/ne_10m_roads.geojson"
-)
+def ne_url(res: str, layer: str) -> str:
+    return (
+        "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/"
+        f"geojson/ne_{res}_{layer}.geojson"
+    )
+
+
+COASTLINE_URL = ne_url("10m", "coastline")
+LAND_URL = ne_url("10m", "land")
+MINOR_ISLANDS_URL = ne_url("10m", "minor_islands")
+ROADS_URL = ne_url("10m", "roads")
 AIRPORTS_URL = (
     "https://raw.githubusercontent.com/davidmegginson/ourairports-data/main/"
     "airports.csv"
@@ -80,11 +75,21 @@ CACHE_MAP = {
 }
 
 
-def cached(url: str, path: Path) -> Path:
+def cached(url: str, path: Path) -> Path | None:
+    """Download url → path if missing. Returns the path, or None if the
+    upstream 404'd (e.g. Natural Earth 50m has no minor_islands / roads
+    layers)."""
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        print(f"downloading {url}", file=sys.stderr)
+    if path.exists():
+        return path
+    print(f"downloading {url}", file=sys.stderr)
+    try:
         urllib.request.urlretrieve(url, path)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            print(f"  not available (404), skipping", file=sys.stderr)
+            return None
+        raise
     return path
 
 
@@ -175,6 +180,8 @@ def round_pt(p, decimals=5):
 
 def build_coastline(bbox, tol_deg=0.002):
     path = cached(*CACHE_MAP["coastline"])
+    if path is None:
+        return []
     data = json.loads(path.read_text())
     out = []
     for feat in data.get("features", []):
@@ -291,6 +298,8 @@ def build_land(bbox, tol_deg=0.003):
     triangles = []  # (v0, v1, v2) indices
     for key in ("land", "islands"):
         path = cached(*CACHE_MAP[key])
+        if path is None:
+            continue
         data = json.loads(path.read_text())
         for feat in data.get("features", []):
             geom = feat.get("geometry") or {}
@@ -330,6 +339,8 @@ def build_land(bbox, tol_deg=0.003):
 
 def build_roads(bbox, tol_deg=0.002, keep_types=("Major Highway", "Secondary Highway")):
     path = cached(*CACHE_MAP["roads"])
+    if path is None:
+        return []
     data = json.loads(path.read_text())
     keep = set(keep_types)
     out = []
@@ -416,30 +427,37 @@ def build_airports(bbox):
             "lat2": round(lat2, 5), "lon2": round(lon2, 5),
         })
 
-    # Detailed airports in bbox (for radar-style rendering)
+    # Detailed airports (bbox arg is IGNORED for this table; we ship all
+    # US airports so any typeahead pick has runway data). This makes the
+    # payload larger but keeps behaviour uniform when the center moves
+    # from Bay Area to, say, Miami.
     detailed = {}
     for a in airports:
         atype = a.get("type", "")
-        if atype not in AIRPORT_TIER:
+        # Skip smallest untowered strips — they're mostly private
+        # farmland fields with no scheduled service; not useful for a
+        # spectator preview.
+        tier = AIRPORT_TIER.get(atype, 0)
+        keep = tier >= 2 or (tier == 1 and a.get("scheduled_service") == "yes")
+        if not keep:
             continue
         ident = (a.get("ident") or "").strip()
         if len(ident) != 4 or ident[0] != "K":
-            continue  # phase 1: CONUS ICAO codes (K-prefixed)
+            continue  # CONUS scope (K-prefixed ICAOs)
         try:
             lat = float(a["latitude_deg"])
             lon = float(a["longitude_deg"])
         except (KeyError, ValueError, TypeError):
-            continue
-        if not in_bbox(lon, lat, bbox):
             continue
         detailed[ident] = {
             "name": a.get("name", ""),
             "city": a.get("municipality", ""),
             "lat": round(lat, 5),
             "lon": round(lon, 5),
-            "tier": AIRPORT_TIER[atype],
+            "tier": tier,
             "runways": rw_by_apt.get(ident, []),
         }
+    _ = bbox  # accepted for symmetry, no longer used
 
     # Global US typeahead index: all recognizable airports
     index = []
@@ -487,10 +505,45 @@ def emit(path: Path, payload) -> None:
     print(f"wrote {path.relative_to(ROOT)} ({size/1024:.1f} KB)", file=sys.stderr)
 
 
+def build_conus(res: str = "50m") -> None:
+    """Bake CONUS-wide layers at a coarser resolution so ANY US airport
+    the user picks in the typeahead gets some map context. Emitted with
+    a _conus suffix so the client can load them as a base and layer the
+    Bay-Area 10m detail over them where available."""
+    global CACHE_MAP
+    saved = dict(CACHE_MAP)
+    CACHE_MAP = {
+        "coastline": (ne_url(res, "coastline"), CACHE_DIR / f"ne_{res}_coastline.geojson"),
+        "land":      (ne_url(res, "land"),      CACHE_DIR / f"ne_{res}_land.geojson"),
+        # 50m has no minor_islands layer; skip cleanly if absent.
+        "islands":   (ne_url(res, "minor_islands"), CACHE_DIR / f"ne_{res}_minor_islands.geojson"),
+        "roads":     (ne_url(res, "roads"),     CACHE_DIR / f"ne_{res}_roads.geojson"),
+    }
+    # CONUS bbox: (min_lat, max_lat, min_lon, max_lon) — approximately
+    # southern tip of Florida to northern Minnesota, coast to coast.
+    conus_bbox = (24.0, 50.0, -125.0, -66.0)
+    # At CONUS scale we simplify harder — 0.02° ≈ 2 km, still fine at
+    # the site's radar zoom.
+    try:
+        coast = build_coastline(conus_bbox, tol_deg=0.02)
+        emit(OUT_DIR / "coastline_conus.json", coast)
+        land = build_land(conus_bbox, tol_deg=0.02)
+        emit(OUT_DIR / "land_conus.json", land)
+        # Keep just Major Highway at CONUS scope — Secondary would flood
+        # the payload.
+        roads = build_roads(conus_bbox, tol_deg=0.005,
+                            keep_types=("Major Highway",))
+        emit(OUT_DIR / "roads_conus.json", roads)
+    finally:
+        CACHE_MAP = saved
+
+
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--center", default=f"{DEFAULT_CENTER_LAT},{DEFAULT_CENTER_LON}")
     p.add_argument("--radius-km", type=float, default=DEFAULT_RADIUS_KM)
+    p.add_argument("--conus", action="store_true",
+                   help="Also bake a CONUS-wide 50m base layer.")
     args = p.parse_args()
 
     lat_str, lon_str = args.center.split(",")
@@ -509,6 +562,9 @@ def main() -> None:
     detailed, index = build_airports(bbox)
     emit(OUT_DIR / "airports.json", detailed)
     emit(OUT_DIR / "airport_index.json", index)
+
+    if args.conus:
+        build_conus()
 
 
 if __name__ == "__main__":

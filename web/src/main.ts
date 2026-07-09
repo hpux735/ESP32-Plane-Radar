@@ -10,6 +10,7 @@ import {
   cycleFocus,
   toggleLayer,
   setView,
+  setCenter,
   type LayerId,
 } from "./state";
 import { makeTapDiscriminator, type Tap } from "./input";
@@ -212,11 +213,23 @@ async function init(): Promise<void> {
     });
   }
 
-  // Dev hook: ?view=weather boots directly into the weather view so
-  // headless tests / a quick share-link can bypass triple-tapping.
-  if (new URLSearchParams(location.search).get("view") === "weather") {
-    enterWeather();
+  // URL hooks (mostly for testing + shareable links):
+  //   ?view=weather              boot straight into the weather view
+  //   ?apt=KJFK                  center on this ICAO from the airport table
+  //   ?lat=40.6&lon=-73.7        raw center override
+  const qs = new URLSearchParams(location.search);
+  const apt = qs.get("apt");
+  if (apt && mapData?.airports[apt]) {
+    const a = mapData.airports[apt];
+    setCenter(a.lat, a.lon, apt);
+  } else {
+    const lat = parseFloat(qs.get("lat") ?? "");
+    const lon = parseFloat(qs.get("lon") ?? "");
+    if (isFinite(lat) && isFinite(lon)) {
+      setCenter(lat, lon, "?");
+    }
   }
+  if (qs.get("view") === "weather") enterWeather();
 }
 
 if (document.readyState === "loading") {

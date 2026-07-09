@@ -2,6 +2,7 @@
 // caller decides when to invoke (input change, animation frame, etc.)
 
 import type { MapData } from "./data";
+import { selectMap } from "./data";
 import { makeView, project, segmentOnScreen, distSqFromCenter, type ViewFrame } from "./projection";
 import {
   CENTER_X,
@@ -35,9 +36,9 @@ function unclip(ctx: CanvasRenderingContext2D): void {
   ctx.restore();
 }
 
-function drawLand(ctx: CanvasRenderingContext2D, view: ViewFrame, data: MapData): void {
+function drawLand(ctx: CanvasRenderingContext2D, view: ViewFrame, land: MapData["land"]): void {
   if (!state.layers.land) return;
-  const { vertices, triangles } = data.land;
+  const { vertices, triangles } = land;
   ctx.fillStyle = COLORS.land;
   ctx.beginPath();
   for (const [ia, ib, ic] of triangles) {
@@ -57,12 +58,12 @@ function drawLand(ctx: CanvasRenderingContext2D, view: ViewFrame, data: MapData)
   ctx.fill();
 }
 
-function drawCoastline(ctx: CanvasRenderingContext2D, view: ViewFrame, data: MapData): void {
+function drawCoastline(ctx: CanvasRenderingContext2D, view: ViewFrame, coastline: MapData["coastline"]): void {
   if (!state.layers.coast) return;
   ctx.strokeStyle = COLORS.coastline;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (const line of data.coastline) {
+  for (const line of coastline) {
     let prev: [number, number] | null = null;
     for (const [lon, lat] of line) {
       const p = project(view, lat, lon);
@@ -76,12 +77,12 @@ function drawCoastline(ctx: CanvasRenderingContext2D, view: ViewFrame, data: Map
   ctx.stroke();
 }
 
-function drawRoads(ctx: CanvasRenderingContext2D, view: ViewFrame, data: MapData): void {
+function drawRoads(ctx: CanvasRenderingContext2D, view: ViewFrame, roads: MapData["roads"]): void {
   if (!state.layers.roads) return;
   ctx.strokeStyle = COLORS.road;
   ctx.lineWidth = 1.4;
   ctx.beginPath();
-  for (const road of data.roads) {
+  for (const road of roads) {
     let prev: [number, number] | null = null;
     for (const [lon, lat] of road.points) {
       const p = project(view, lat, lon);
@@ -116,11 +117,13 @@ function drawRings(ctx: CanvasRenderingContext2D): void {
 
 function drawRunways(ctx: CanvasRenderingContext2D, view: ViewFrame, data: MapData): void {
   if (!state.layers.runways) return;
+  // Large airports at all zooms; medium airports only when zoomed in.
+  const minTier = view.outerKm > 20 ? 3 : 2;
   ctx.strokeStyle = COLORS.runway;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  for (const [icao, apt] of Object.entries(data.airports)) {
-    if (apt.tier < 3) continue; // large airports only
+  for (const [, apt] of Object.entries(data.airports)) {
+    if (apt.tier < minTier) continue;
     for (const rw of apt.runways) {
       const [x1, y1] = project(view, rw.lat1, rw.lon1);
       const [x2, y2] = project(view, rw.lat2, rw.lon2);
@@ -128,7 +131,6 @@ function drawRunways(ctx: CanvasRenderingContext2D, view: ViewFrame, data: MapDa
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
     }
-    void icao;
   }
   ctx.stroke();
   // Labels
@@ -137,7 +139,7 @@ function drawRunways(ctx: CanvasRenderingContext2D, view: ViewFrame, data: MapDa
   ctx.textBaseline = "top";
   ctx.fillStyle = COLORS.runwayLabel;
   for (const [icao, apt] of Object.entries(data.airports)) {
-    if (apt.tier < 3) continue;
+    if (apt.tier < minTier) continue;
     const [x, y] = project(view, apt.lat, apt.lon);
     if (distSqFromCenter(x, y) > GRID_OUTER_RADIUS * GRID_OUTER_RADIUS) continue;
     ctx.fillText(icao, x, y + 6);
@@ -186,12 +188,15 @@ export function renderFrame(ctx: CanvasRenderingContext2D, data: MapData): void 
   const view = makeView(state.centerLat, state.centerLon, currentOuterKm());
 
   fillBackground(ctx);
+  // Pick the appropriate map layers: high-detail Bay Area if the
+  // current center is in-bounds, else CONUS 50m coarse base.
+  const map = selectMap(data, state.centerLat, state.centerLon);
   // Land is CLIPPED to the outer disc; the coastline/roads sit over it and
   // also inside the disc. Order matches drawStaticGrid in the firmware.
   clipToOuterDisc(ctx);
-  drawLand(ctx, view, data);
-  drawCoastline(ctx, view, data);
-  drawRoads(ctx, view, data);
+  drawLand(ctx, view, map.land);
+  drawCoastline(ctx, view, map.coastline);
+  drawRoads(ctx, view, map.roads);
   unclip(ctx);
 
   drawRings(ctx);
