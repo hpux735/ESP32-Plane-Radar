@@ -57,11 +57,12 @@ constexpr double kDefaultRadarLat = 37.7552;
 constexpr double kDefaultRadarLon = -122.4528;
 
 // --- METAR flight-category map defaults (overridden via WiFi setup portal) ---
-// Center picked to match the geometric middle of the baked Bay Area airport
-// list; radius covers the full envelope with a small margin.
-constexpr float kDefaultMetarLat = 37.55f;
-constexpr float kDefaultMetarLon = -122.30f;
-constexpr float kDefaultMetarRadiusNm = 45.0f;
+// Center + radius chosen to match the pre-config auto-fit: geometric middle
+// of the baked Bay Area airport list, with the farthest airport landing
+// just inside the bezel (KRHV is the pole at ~26 nm from center).
+constexpr float kDefaultMetarLat = 37.661f;
+constexpr float kDefaultMetarLon = -122.160f;
+constexpr float kDefaultMetarRadiusNm = 28.0f;
 
 /** Poll adsb.fi (API public limit: 1 req/s). */
 constexpr unsigned long kAdsbFetchIntervalMs = 3000;

@@ -52,9 +52,9 @@ export const DEFAULT_HOME: HomeLocation = {
 // Defaults chosen to match the firmware's config::kDefaultMetar* so the
 // initial map looks identical on both platforms.
 export const DEFAULT_METAR: MetarConfig = {
-  centerLat: 37.55,
-  centerLon: -122.30,
-  radiusNm: 45,
+  centerLat: 37.661,
+  centerLon: -122.160,
+  radiusNm: 28,
 };
 
 export interface AppState {
