@@ -15,6 +15,9 @@ import {
 import { STATIONS, lastUpdateMs, type Category } from "./weather";
 import type { MapData } from "./data";
 import { segmentOnScreen } from "./projection";
+import { state } from "./state";
+
+const KM_PER_NM = 1.852;
 
 const PROJECTION_PX = 108;
 const LABEL_MARGIN_PX = 14;
@@ -75,33 +78,25 @@ function overlapArea(
 interface Fit {
   centerLat: number;
   centerLon: number;
+  cosCenter: number;
   pxPerKm: number;
 }
 
+// Reads center + radius from state.metar (user-editable via the settings
+// overlay). Radius maps to just inside the bezel; stations beyond the
+// radius project past the visible disc and are filtered out by insideDisc.
 function computeFit(): Fit {
-  let minLat = STATIONS[0].lat, maxLat = STATIONS[0].lat;
-  let minLon = STATIONS[0].lon, maxLon = STATIONS[0].lon;
-  for (const s of STATIONS) {
-    if (s.lat < minLat) minLat = s.lat;
-    if (s.lat > maxLat) maxLat = s.lat;
-    if (s.lon < minLon) minLon = s.lon;
-    if (s.lon > maxLon) maxLon = s.lon;
-  }
-  const centerLat = (minLat + maxLat) / 2;
-  const centerLon = (minLon + maxLon) / 2;
-  let maxR = 0;
-  for (const s of STATIONS) {
-    const dx = (s.lon - centerLon) * KM_PER_DEG;
-    const dy = (s.lat - centerLat) * KM_PER_DEG;
-    const r = Math.sqrt(dx * dx + dy * dy);
-    if (r > maxR) maxR = r;
-  }
+  const centerLat = state.metar.centerLat;
+  const centerLon = state.metar.centerLon;
+  const cosCenter = Math.cos(centerLat * Math.PI / 180);
+  const radiusKm = state.metar.radiusNm * KM_PER_NM;
   const budget = PROJECTION_PX - LABEL_MARGIN_PX;
-  return { centerLat, centerLon, pxPerKm: maxR > 0 ? budget / maxR : 1 };
+  const pxPerKm = radiusKm > 0 ? budget / radiusKm : 1;
+  return { centerLat, centerLon, cosCenter, pxPerKm };
 }
 
 function project(fit: Fit, lat: number, lon: number): [number, number] {
-  const dxKm = (lon - fit.centerLon) * KM_PER_DEG;
+  const dxKm = (lon - fit.centerLon) * KM_PER_DEG * fit.cosCenter;
   const dyKm = (lat - fit.centerLat) * KM_PER_DEG;
   return [
     CENTER_X + Math.round(dxKm * fit.pxPerKm),

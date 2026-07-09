@@ -15,6 +15,7 @@ import {
 } from "./state";
 import { makeTapDiscriminator, type Tap } from "./input";
 import { mountTypeahead } from "./airports";
+import { mountSettings } from "./settings";
 import { drawWeatherView } from "./weatherView";
 import { refreshIfStale } from "./weather";
 import { fetchAircraft } from "./aircraft";
@@ -217,6 +218,7 @@ async function init(): Promise<void> {
   if (layerRoot) mountLayerToggles(layerRoot);
   mountHintButtons();
   mountKeyboardShortcuts();
+  mountSettings();
 
   try {
     mapData = await loadMapData("data");
