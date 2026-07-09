@@ -31,7 +31,7 @@ export const onRequestGet: PagesFunction<Env> = async (context) => {
 
   const resp = await fetch(upstream, {
     // adsb.fi is friendly to plain GETs; a UA header is polite.
-    headers: { "User-Agent": "plane-radar-web (github.com/yaf-sb/ESP32-Plane-Radar)" },
+    headers: { "User-Agent": "plane-radar-web (github.com/benyaffe/ESP32-Plane-Radar)" },
     cf: {
       // Cache upstream responses at the edge for 5 s so multiple
       // browsers hitting the same center don't hammer the source.

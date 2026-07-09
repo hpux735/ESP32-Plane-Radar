@@ -6,7 +6,7 @@ proxies aircraft data. Everything below is free forever at this scale.
 
 ## What you need
 
-- A GitHub account with this repo forked (already true — [yaf-sb/ESP32-Plane-Radar](https://github.com/yaf-sb/ESP32-Plane-Radar)).
+- A GitHub account with this repo forked (already true — [benyaffe/ESP32-Plane-Radar](https://github.com/benyaffe/ESP32-Plane-Radar)).
 - A [free Cloudflare account](https://dash.cloudflare.com/sign-up). No credit card required for what we're using.
 - (Optional, for `radar.benyaffe.com`) Access to your GoDaddy DNS management to add one CNAME record.
 
@@ -15,7 +15,7 @@ proxies aircraft data. Everything below is free forever at this scale.
 1. Sign in at [dash.cloudflare.com](https://dash.cloudflare.com/).
 2. In the left sidebar: **Workers & Pages** → **Create** → **Pages** tab → **Connect to Git**.
 3. Authorize Cloudflare to read your GitHub — Cloudflare will only see repos you allow.
-4. Pick **`yaf-sb/ESP32-Plane-Radar`**. Click **Begin setup**.
+4. Pick **`benyaffe/ESP32-Plane-Radar`**. Click **Begin setup**.
 5. Fill in the build config (this is the only Cloudflare screen where the defaults are wrong for us — because our site lives in a `web/` subdirectory, not the repo root):
 
     | Field                  | Value                              |
