@@ -1,7 +1,22 @@
 [build]
+  # Netlify runs this from the base directory. In the Netlify site
+  # settings the base is set to `web`, so paths below are relative to
+  # `<repo>/web/`.
   command = "npm install && npm run build"
   publish = "dist"
   functions = "netlify/functions"
 
+[build.environment]
+  NODE_VERSION = "20"
+
 [functions]
   node_bundler = "esbuild"
+
+# The function at netlify/functions/adsb.js already declares its own
+# path via a `config.path` export, so no manual redirect is strictly
+# required. Kept here as a fallback in case the export is ignored.
+[[redirects]]
+  from = "/api/adsb"
+  to = "/.netlify/functions/adsb"
+  status = 200
+  force = true

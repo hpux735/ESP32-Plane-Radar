@@ -1,76 +1,68 @@
 # Deploying the Plane Radar web preview
 
-The site lives under [`web/`](.) and deploys as a Cloudflare Worker with
-a static-assets binding — one Worker serves both the HTML/JS/CSS/JSON
-bundle AND the `/api/adsb` proxy that fetches live ADS-B data. Free at
-this scale, forever.
+The site lives under [`web/`](.) and deploys as a static site with one
+serverless function that proxies live ADS-B data. Free forever at this
+scale, no credit card required.
+
+**Live at:** currently deploying via **Netlify** (was Cloudflare Workers
+Builds during initial exploration; migrated because Netlify's build
+UX + auto-deploy for static-with-functions was cleaner for a
+non-technical maintainer).
 
 ## What you need
 
-- A GitHub account with the repo pushed (you have it — [benyaffe/ESP32-Plane-Radar](https://github.com/benyaffe/ESP32-Plane-Radar) on branch `sdl-emulator`).
-- A [free Cloudflare account](https://dash.cloudflare.com/sign-up). No credit card required.
-- (Optional, for a custom domain like `radar.benyaffe.com`) Access to your GoDaddy DNS management.
+- A GitHub account with the repo pushed (you have it — [benyaffe/ESP32-Plane-Radar](https://github.com/benyaffe/ESP32-Plane-Radar)).
+- A [free Netlify account](https://app.netlify.com/signup).
+- (Optional, for a custom domain) Access to your GoDaddy DNS management.
 
-## Step 1 — connect the repo to Cloudflare
+## Step 1 — connect the repo to Netlify
 
-1. Sign in at [dash.cloudflare.com](https://dash.cloudflare.com/).
-2. Left sidebar: **Compute (Workers)** (or **Workers & Pages** in older
-   accounts) → **Create** → **Import a repository**.
-3. Authorize the Cloudflare GitHub app. On the GitHub screen, pick
-   **"Only select repositories"** and check
-   **`benyaffe/ESP32-Plane-Radar`**. Click **Install & Authorize**.
-4. Cloudflare shows the "Set up your application" screen with the repo
-   already selected. Fill in exactly:
+1. Sign in at [app.netlify.com](https://app.netlify.com/).
+2. **Add new site** → **Import an existing project** → **Deploy with GitHub**.
+3. Authorize Netlify to read your GitHub repos (pick "Only select
+   repositories" and check `benyaffe/ESP32-Plane-Radar`).
+4. Fill in the build settings:
 
-    | Field                                | Value                                    |
-    | ------------------------------------ | ---------------------------------------- |
-    | Project name                         | `plane-radar` (becomes part of the URL)  |
-    | Build command                        | `cd web && npm install && npm run build` |
-    | Deploy command                       | `cd web && npx wrangler deploy`          |
-    | Builds for non-production branches   | leave checked (default)                  |
-    | Non-production branch deploy command | `cd web && npx wrangler versions upload` |
-    | Path                                 | *(leave blank — repo root)*              |
+    | Field                  | Value                                    |
+    | ---------------------- | ---------------------------------------- |
+    | Branch                 | `main`                                   |
+    | Base directory         | `web`                                    |
+    | Build command          | `npm install && npm run build`           |
+    | Publish directory      | `web/dist`                               |
+    | Functions directory    | `netlify/functions` (auto-detected)      |
 
-5. Click **Deploy**.
+5. **Add environment variable** (optional but recommended):
+    - `NODE_VERSION = 20`
+6. Click **Deploy site**.
 
-The first build takes ~2 minutes. Watch the live log — when it finishes,
-Cloudflare gives you a URL like `https://plane-radar.your-subdomain.workers.dev`.
-Open it — you should see the radar with live Bay Area traffic.
+First build takes ~2 minutes. When it finishes, Netlify gives you a
+URL like `https://plane-radar-xyz.netlify.app`. Open it — the radar
+should load with live Bay Area traffic.
 
-## Step 2 — pick the deploying branch
+## Step 2 — (optional) custom domain `radar.benyaffe.com`
 
-Cloudflare defaults to whatever GitHub branch is the repo's default
-(usually `main`). If your changes are on `sdl-emulator`, either:
+Once the `netlify.app` URL is live:
 
-- **Set `sdl-emulator` as the production branch** — in the project's
-  **Settings** → **Builds & deployments** → change **Production branch**
-  to `sdl-emulator`, then push a commit (or click **Retry deployment**).
-- **Or merge `sdl-emulator` into `main`** on GitHub — the site will
-  auto-redeploy from `main`.
-
-Either works.
-
-## Step 3 — (optional) custom domain `radar.benyaffe.com`
-
-Once the `workers.dev` URL is live:
-
-1. In the Cloudflare project → **Settings** → **Domains & Routes** →
-   **Add** → **Custom domain**.
-2. Enter `radar.benyaffe.com`. Cloudflare gives you either a CNAME target
-   or DNS records to add.
+1. In the Netlify project → **Domain management** → **Add a domain**.
+2. Enter `radar.benyaffe.com`. Netlify shows the CNAME target
+   (usually `<sitename>.netlify.app`).
 3. In another tab, log into GoDaddy → **My Products** → **Domains** →
    `benyaffe.com` → **DNS**.
-4. Add the record Cloudflare showed (usually a CNAME:
-   `radar` → `plane-radar.workers.dev` or similar).
-5. Back in Cloudflare, click **Verify** (or wait a few minutes).
-   Cloudflare provisions SSL automatically.
+4. Add record:
+   - **Type**: `CNAME`
+   - **Name**: `radar`
+   - **Value**: the Netlify target from step 2
+   - **TTL**: default (1 hour) is fine
+5. Back in Netlify, click **Verify DNS configuration** (or wait a
+   few minutes). Netlify provisions SSL automatically via Let's
+   Encrypt.
 
 `https://radar.benyaffe.com` is live.
 
 ## Updating the site
 
-Push commits to the deploying branch. Cloudflare rebuilds automatically.
-Build logs live under the project's **Deployments** tab.
+Just push commits to the deploying branch (`main`). Netlify rebuilds
+automatically. Build logs live under the **Deploys** tab.
 
 ## Local testing
 
@@ -82,33 +74,38 @@ npm run dev
 
 Vite serves at `http://localhost:5173`. A small dev-only middleware
 forwards `/api/adsb` to `opendata.adsb.fi` so aircraft data works
-without deploying anything.
+locally without deploying anything.
 
-To test the Worker itself locally (Vite dev doesn't run it):
+## What the deploy actually runs
 
-```bash
-cd web
-npm run build
-npx wrangler dev
-```
-
-Serves at `http://localhost:8787`.
+- **Static assets** (`web/dist/*`): HTML, JS, CSS, baked geographic
+  JSON files. Served straight off Netlify's edge CDN.
+- **One Netlify Function** (`web/netlify/functions/adsb.ts`, migrated
+  from the Cloudflare Worker at `web/worker.ts`): proxies
+  `/api/adsb?lat=X&lon=Y&nm=Z` to airplanes.live (primary) and
+  opendata.adsb.fi (fallback). Adds CORS headers.
+- **Live METAR** (`api.weather.gov`): called direct from the
+  browser (NWS sends `Access-Control-Allow-Origin: *`, no proxy
+  needed).
 
 ## Troubleshooting
 
-- **Build fails on `npm install`** — check that Node version is 18+. In
-  project **Settings** → **Variables and Secrets** → add
-  `NODE_VERSION=20`.
-- **Deploy step fails with "You must set an account ID"** — the
-  Cloudflare Builds environment provides `CLOUDFLARE_ACCOUNT_ID` and
-  `CLOUDFLARE_API_TOKEN` automatically. If you see this error, the
-  build ran outside Cloudflare (e.g. locally without `wrangler login`).
+- **Build fails on `npm install`** — check the Node version in
+  **Site settings** → **Environment variables**. Set `NODE_VERSION = 20`.
 - **Aircraft don't appear** — open browser devtools → Network → visit
   `/api/adsb?lat=37.75&lon=-122.41&nm=25`. If it 404s or 502s, check
-  the Worker's logs in the Cloudflare dashboard. The specific case
-  `{"error": "upstream 403"}` means the ADS-B source is blocking
-  Cloudflare Worker IP ranges (opendata.adsb.fi does this) — the
-  Worker already falls back through a list; check that airplanes.live
-  is still first, and try adding another peer if both start blocking.
-- **Weather view says "no data"** — CORS on `api.weather.gov` works as
-  of this writing. If it stops, that's on the NWS end.
+  the Function's logs in Netlify.
+  The specific case `{"error": "upstream 403"}` means the ADS-B source
+  is blocking cloud IP ranges (opendata.adsb.fi does this); the
+  Function already falls through a list — check that airplanes.live
+  is first.
+- **Weather view says "no data"** — CORS on `api.weather.gov` was
+  working when this was written. If it stops, that's on the NWS end.
+
+## Notes on the older Cloudflare setup
+
+If you had a working Cloudflare Workers Builds deploy from earlier
+iterations, `web/worker.ts` and `web/wrangler.jsonc` are still in the
+tree — they'd still deploy correctly under Cloudflare Workers if you
+ever want to switch back. The Netlify function at `web/functions/adsb.js`
+does the same job in the Netlify runtime.
