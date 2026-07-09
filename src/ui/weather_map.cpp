@@ -8,22 +8,52 @@
 #include "data/land.h"
 #include "hardware/display.h"
 #include "hardware/display_font.h"
-#include "services/radar_location.h"
 #include "services/weather.h"
 #include "ui/radar_theme.h"
 
 namespace ui::weather {
 namespace {
 
-// Weather-map projection: centered on the current focus/home, ~48 nm
-// radius so KCCR (~13 nm N) to KRHV (~35 nm SE) fit with margin without
-// crowding out the tight Peninsula cluster. The 108-px projection radius
-// leaves 12 px of margin inside the physical bezel (120 px) for labels
-// + legend.
-constexpr float kWeatherRadiusKm  = 88.0f;
-constexpr int   kProjectionPx     = 108;
+// Weather-map projection: auto-fit — the center is the geometric middle
+// of the current station set (NOT the user's home/focus), and the scale
+// is picked so the farthest station lands ~12 px inside the bezel. This
+// packs the fixed airport set as densely as possible into the round
+// viewport regardless of which stations are on the list.
+constexpr int   kProjectionPx     = 108;    // physical bezel is 120
+constexpr int   kLabelMarginPx    = 14;     // reserve for label glyphs
 constexpr float kKmPerDeg         = 111.0f;
 constexpr float kE7               = 1e-7f;
+
+// Populated by computeFit() on each frame — cheap for 11 stations.
+float s_center_lat = 0.0f;
+float s_center_lon = 0.0f;
+float s_px_per_km  = 1.0f;
+
+void computeFit() {
+  const services::weather::Station* st = services::weather::stations();
+  const size_t n = services::weather::stationCount();
+  if (n == 0) return;
+  float min_lat = st[0].lat, max_lat = st[0].lat;
+  float min_lon = st[0].lon, max_lon = st[0].lon;
+  for (size_t i = 1; i < n; ++i) {
+    if (st[i].lat < min_lat) min_lat = st[i].lat;
+    if (st[i].lat > max_lat) max_lat = st[i].lat;
+    if (st[i].lon < min_lon) min_lon = st[i].lon;
+    if (st[i].lon > max_lon) max_lon = st[i].lon;
+  }
+  s_center_lat = (min_lat + max_lat) * 0.5f;
+  s_center_lon = (min_lon + max_lon) * 0.5f;
+  // Farthest station in km from the geometric center.
+  float max_r_km = 0.0f;
+  for (size_t i = 0; i < n; ++i) {
+    const float dx = (st[i].lon - s_center_lon) * kKmPerDeg;
+    const float dy = (st[i].lat - s_center_lat) * kKmPerDeg;
+    const float r  = std::sqrt(dx * dx + dy * dy);
+    if (r > max_r_km) max_r_km = r;
+  }
+  const float budget_px = static_cast<float>(kProjectionPx - kLabelMarginPx);
+  s_px_per_km = (max_r_km > 0.0f) ? (budget_px / max_r_km) : 1.0f;
+}
 
 uint16_t categoryColor(services::weather::Category c) {
   switch (c) {
@@ -36,13 +66,10 @@ uint16_t categoryColor(services::weather::Category c) {
 }
 
 void projectLatLon(float lat, float lon, int* out_x, int* out_y) {
-  const double center_lat = services::location::lat();
-  const double center_lon = services::location::lon();
-  const float px_per_km   = static_cast<float>(kProjectionPx) / kWeatherRadiusKm;
-  const float dx_km = static_cast<float>(lon - center_lon) * kKmPerDeg;
-  const float dy_km = static_cast<float>(lat - center_lat) * kKmPerDeg;
-  *out_x = radar::kCenterX + static_cast<int>(std::lroundf(dx_km * px_per_km));
-  *out_y = radar::kCenterY - static_cast<int>(std::lroundf(dy_km * px_per_km));
+  const float dx_km = (lon - s_center_lon) * kKmPerDeg;
+  const float dy_km = (lat - s_center_lat) * kKmPerDeg;
+  *out_x = radar::kCenterX + static_cast<int>(std::lroundf(dx_km * s_px_per_km));
+  *out_y = radar::kCenterY - static_cast<int>(std::lroundf(dy_km * s_px_per_km));
 }
 
 bool insideDisc(int x, int y) {
@@ -96,42 +123,11 @@ void drawCoast(lgfx::LGFXBase& gfx) {
   }
 }
 
-void drawTitle(lgfx::LGFXBase& gfx) {
-  displayFontEnsureLoaded(gfx);
-  gfx.setTextSize(0.44f);
-  gfx.setTextColor(radar::kColorLabel, radar::kColorBackground);
-  gfx.setTextDatum(textdatum_t::top_center);
-  gfx.drawString("WX", radar::kCenterX, 6);
-}
-
-// Small legend row across the middle of the bezel margin at the bottom.
-// Four color chips + text.
-void drawLegend(lgfx::LGFXBase& gfx) {
-  constexpr int y = 220;
-  constexpr int chip = 4;
-  const services::weather::Category cats[] = {
-      services::weather::Category::VFR,
-      services::weather::Category::MVFR,
-      services::weather::Category::IFR,
-      services::weather::Category::LIFR,
-  };
-  const char* labels[] = {"V", "M", "I", "L"};
-  int x = radar::kCenterX - 44;
-  gfx.setTextSize(0.40f);
-  gfx.setTextDatum(textdatum_t::middle_left);
-  for (int i = 0; i < 4; ++i) {
-    gfx.fillCircle(x, y, chip, categoryColor(cats[i]));
-    gfx.setTextColor(radar::kColorLabel, radar::kColorBackground);
-    gfx.drawString(labels[i], x + chip + 2, y);
-    x += 24;
-  }
-}
-
 void drawStations(lgfx::LGFXBase& gfx) {
   const services::weather::Station* stations = services::weather::stations();
   const size_t n = services::weather::stationCount();
   displayFontEnsureLoaded(gfx);
-  gfx.setTextSize(0.44f);
+  gfx.setTextSize(0.60f);
   gfx.setTextDatum(textdatum_t::top_center);
 
   for (size_t i = 0; i < n; ++i) {
@@ -153,7 +149,7 @@ void drawStations(lgfx::LGFXBase& gfx) {
 
 void drawFreshness(lgfx::LGFXBase& gfx) {
   const unsigned long last = services::weather::lastUpdateMs();
-  gfx.setTextSize(0.36f);
+  gfx.setTextSize(0.40f);
   gfx.setTextDatum(textdatum_t::top_center);
   gfx.setTextColor(radar::kColorGrid, radar::kColorBackground);
   char buf[24];
@@ -165,7 +161,7 @@ void drawFreshness(lgfx::LGFXBase& gfx) {
     if (age_s < 60) std::snprintf(buf, sizeof(buf), "%lus ago", age_s);
     else            std::snprintf(buf, sizeof(buf), "%lum ago", age_s / 60);
   }
-  gfx.drawString(buf, radar::kCenterX, 22);
+  gfx.drawString(buf, radar::kCenterX, 8);
 }
 
 }  // namespace
@@ -182,13 +178,12 @@ void refresh() {
 }
 
 void draw() {
+  computeFit();
   tft.fillScreen(radar::kColorBackground);
   drawLand(tft);
   drawCoast(tft);
-  drawTitle(tft);
   drawFreshness(tft);
   drawStations(tft);
-  drawLegend(tft);
   // Bezel mask — same as the radar view. Keeps SDL visually matched to
   // the round physical panel.
   tft.fillArc(radar::kCenterX, radar::kCenterY, radar::kSize + 8, 120, 0, 360,
