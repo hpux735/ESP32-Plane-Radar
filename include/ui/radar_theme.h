@@ -108,5 +108,12 @@ extern uint16_t kColorRunwayLabel;
 extern uint16_t kColorLand;
 /** Squawking 7500 / 7600 / 7700 — symbol, vector, and "EM" tag glyph. */
 extern uint16_t kColorEmergency;
+/** Baked road polylines — subtle grey so they read as landmarks without
+ *  dominating the traffic. Bumped up from a near-invisible dim grey so
+ *  freeways are actually visible against the land tint. */
+extern uint16_t kColorRoad;
+constexpr uint8_t kRoadR = 110;
+constexpr uint8_t kRoadG = 110;
+constexpr uint8_t kRoadB = 130;
 
 }  // namespace ui::radar
