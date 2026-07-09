@@ -11,6 +11,7 @@ namespace ui::proj {
 namespace {
 
 constexpr float kKmPerDeg = 111.0f;
+constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
 
 }  // namespace
 
@@ -18,7 +19,10 @@ float e7ToDeg(int32_t e7) { return static_cast<float>(e7) * 1e-7f; }
 
 void offsetKmFromCenter(float lat, float lon, float* dx_km, float* dy_km,
                         float* dist_km) {
-  *dx_km = static_cast<float>(lon - services::location::lon()) * kKmPerDeg;
+  const float center_lat_rad =
+      static_cast<float>(services::location::lat()) * kDegToRad;
+  *dx_km = static_cast<float>(lon - services::location::lon()) * kKmPerDeg *
+           std::cos(center_lat_rad);
   *dy_km = static_cast<float>(lat - services::location::lat()) * kKmPerDeg;
   *dist_km = std::sqrt((*dx_km) * (*dx_km) + (*dy_km) * (*dy_km));
 }

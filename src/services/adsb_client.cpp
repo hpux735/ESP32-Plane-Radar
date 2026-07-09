@@ -25,6 +25,39 @@ PollFn s_poll_fn = nullptr;
 unsigned long s_last_update_ms = 0;
 unsigned long s_fetch_count = 0;
 
+// Streaming-parse filter — built once, reused. Whitelists only the keys we
+// read below so the whole body never lives in RAM. Keep in sync with the
+// field lookups in pickNoseHeading/pickTrackHeading/pickGroundSpeed/
+// pickAltitudeFt/pickVerticalRate/pickSquawk/isOnGround/fillTagFields.
+JsonDocument s_filter;
+bool s_filter_built = false;
+
+void ensureFilterBuilt() {
+  if (s_filter_built) return;
+  JsonObject ac0 = s_filter["ac"][0].to<JsonObject>();
+  ac0["lat"] = true;
+  ac0["lon"] = true;
+  ac0["flight"] = true;
+  ac0["r"] = true;
+  ac0["hex"] = true;
+  ac0["t"] = true;
+  ac0["alt_baro"] = true;
+  ac0["alt_geom"] = true;
+  ac0["baro_rate"] = true;
+  ac0["geom_rate"] = true;
+  ac0["squawk"] = true;
+  ac0["true_heading"] = true;
+  ac0["mag_heading"] = true;
+  ac0["track"] = true;
+  ac0["dir"] = true;
+  ac0["gs"] = true;
+  ac0["tas"] = true;
+  ac0["ias"] = true;
+  s_filter_built = true;
+}
+
+constexpr size_t kMinFreeHeapForFetch = 50000;
+
 void pollNetwork() {
   if (s_poll_fn != nullptr) {
     s_poll_fn();
@@ -47,45 +80,6 @@ int performGetWithPoll(HTTPClient& http) {
     delay(5);
   }
   return HTTPC_ERROR_READ_TIMEOUT;
-}
-
-bool readResponseBodyWithPoll(HTTPClient& http, String& payload) {
-  WiFiClient* stream = http.getStreamPtr();
-  if (stream == nullptr) {
-    return false;
-  }
-
-  const int content_length = http.getSize();
-  if (content_length > 0) {
-    payload.reserve(static_cast<unsigned>(content_length + 1));
-  }
-
-  uint8_t buffer[512];
-  const unsigned long deadline = millis() + kRequestTimeoutMs;
-  while (millis() < deadline) {
-    pollNetwork();
-    const int available = stream->available();
-    if (available > 0) {
-      const int to_read =
-          available > static_cast<int>(sizeof(buffer)) ? static_cast<int>(sizeof(buffer))
-                                                       : available;
-      const int read_bytes = stream->readBytes(buffer, to_read);
-      if (read_bytes > 0) {
-        payload.concat(reinterpret_cast<const char*>(buffer),
-                       static_cast<unsigned>(read_bytes));
-      }
-    }
-    if (content_length > 0 &&
-        static_cast<int>(payload.length()) >= content_length) {
-      break;
-    }
-    if (!http.connected() && stream->available() <= 0) {
-      break;
-    }
-    delay(1);
-  }
-
-  return payload.length() > 0;
 }
 
 float kmToNauticalMiles(float km) { return km / kKmPerNm; }
@@ -226,6 +220,16 @@ unsigned long lastUpdateMs() { return s_last_update_ms; }
 unsigned long fetchCount() { return s_fetch_count; }
 
 bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
+  // Bail early when the heap is tight — the previous full-body-into-String
+  // path used to crash with NoMemory/EmptyInput on busy sectors (SFO Bravo).
+  // With streaming + filter the parse itself is much smaller, but the TLS
+  // client still allocates a few KB, so leave a safety margin.
+  if (ESP.getFreeHeap() < kMinFreeHeapForFetch) {
+    Serial.printf("adsb: skip (low heap %u)\n",
+                  static_cast<unsigned>(ESP.getFreeHeap()));
+    return false;
+  }
+
   const float dist_nm = kmToNauticalMiles(fetch_radius_km);
 
   String url = kApiBase;
@@ -252,16 +256,19 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
     return false;
   }
 
-  String payload;
-  if (!readResponseBodyWithPoll(http, payload)) {
-    Serial.println("adsb: empty response");
+  WiFiClient* stream = http.getStreamPtr();
+  if (stream == nullptr) {
+    Serial.println("adsb: no stream");
     http.end();
     return false;
   }
-  http.end();
+
+  ensureFilterBuilt();
 
   JsonDocument doc;
-  const DeserializationError err = deserializeJson(doc, payload);
+  const DeserializationError err = deserializeJson(
+      doc, *stream, DeserializationOption::Filter(s_filter));
+  http.end();
   if (err) {
     Serial.printf("adsb: JSON parse error: %s\n", err.c_str());
     return false;

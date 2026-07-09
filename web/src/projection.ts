@@ -27,7 +27,8 @@ export function makeView(centerLat: number, centerLon: number, outerKm: number):
 
 /** Project lat/lon to screen pixel coords. Returns [x, y]. */
 export function project(view: ViewFrame, lat: number, lon: number): [number, number] {
-  const dxKm = (lon - view.centerLon) * KM_PER_DEG;
+  const cosCenterLat = Math.cos(view.centerLat * Math.PI / 180);
+  const dxKm = (lon - view.centerLon) * KM_PER_DEG * cosCenterLat;
   const dyKm = (lat - view.centerLat) * KM_PER_DEG;
   return [
     CENTER_X + Math.round(dxKm * view.pxPerKm),

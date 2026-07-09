@@ -45,8 +45,9 @@ constexpr bool kDisplayInvert = true;
 constexpr bool kDisplayRgbOrder = true;
 
 // --- Radar center defaults (overridden via WiFi setup portal) ---
-constexpr double kDefaultRadarLat = 52.3676;
-constexpr double kDefaultRadarLon = 4.9041;
+// Sutro Tower, San Francisco — public landmark, safe public default.
+constexpr double kDefaultRadarLat = 37.7552;
+constexpr double kDefaultRadarLon = -122.4528;
 
 /** Poll adsb.fi (API public limit: 1 req/s). */
 constexpr unsigned long kAdsbFetchIntervalMs = 3000;
