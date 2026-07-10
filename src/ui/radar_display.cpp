@@ -18,7 +18,6 @@
 #include "ui/layer_style.h"
 #include "ui/radar_range.h"
 #include "ui/radar_theme.h"
-#include "ui/roads_overlay.h"
 #include "ui/runway_overlay.h"
 
 namespace fonts = lgfx::v1::fonts;
@@ -37,7 +36,6 @@ uint16_t kColorRunway = 0x4D5F;
 uint16_t kColorRunwayLabel = 0x7DFF;
 uint16_t kColorLand = 0x0824;  // ~RGB(12, 20, 36) after color565 init
 uint16_t kColorEmergency = 0xF800;  // pure red
-uint16_t kColorRoad = 0x39C7;  // ~RGB(60, 60, 70) after color565 init
 
 }  // namespace radar
 
@@ -213,8 +211,6 @@ void initPalette() {
       ? tft.color565(0, 0, 255)
       : tft.color565(255, 0, 0);
 #endif
-  radar::kColorRoad =
-      tft.color565(radar::kRoadR, radar::kRoadG, radar::kRoadB);
 }
 
 constexpr float kKmPerDeg = 111.0f;
@@ -1247,8 +1243,6 @@ void drawStaticGrid(Gfx& gfx) {
   // Coastline sits over the land tint (delineates the boundary) and under
   // labels/aircraft. No labels to register.
   coastline::draw(gfx);
-  // Roads on top of land + coastline; still under labels + aircraft.
-  ui::roads::draw(gfx);
   // Order matters: airport labels register bounding rects with labels::,
   // then the scale label dodges around them. (N/E/S/W cardinals were
   // removed — north is always up on a radar, so those pixels are wasted.)

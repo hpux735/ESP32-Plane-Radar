@@ -17,15 +17,14 @@ The full radar renders in a Mac window backed by LovyanGFX's SDL panel. Iteratio
 - **Screenshot loop** — every 200 ms the framebuffer is dumped to `/tmp/plane-radar-screenshot.ppm` for closed-loop visual testing (see [`scripts/dev/snap.sh`](scripts/dev/snap.sh)).
 - **Bezel mask** — the SDL panel is square 240×240, but the physical GC9A01 is a disc of radius ~120; a final pass paints the corner region back to background so what you see on the Mac matches what you'd see through the bezel.
 
-## 2. Coastline / land / roads overlays
+## 2. Coastline / land overlays
 
 Baked geographic vector data drawn *under* the traffic so you can tell where the aircraft actually are.
 
 - **`scripts/build_coastlines.py`** — clips [Natural Earth 1:10m coastline](https://www.naturalearthdata.com/) to a 200 km bbox around the center, Douglas–Peucker simplifies, emits `src/data/coastlines_data.cpp` as int32 micro-degrees.
 - **`scripts/build_land.py`** — same pattern for `ne_10m_land` + `ne_10m_minor_islands`, then ear-clip triangulates so the runtime just plays back triangles (no runtime tessellation).
-- **`scripts/build_roads.py`** — Natural Earth `ne_10m_roads` filtered to Major + Secondary Highway.
 - **`include/ui/map_projection.hpp`** + **`src/ui/map_projection.cpp`** — shared `latLonToScreen` / `clipSegmentToDisc` / `segmentIntersectsDisc` primitives; earlier the projection was inline in `runway_overlay.cpp`.
-- **`src/ui/coastline_overlay.cpp`**, **`src/ui/land_overlay.cpp`**, **`src/ui/roads_overlay.cpp`** — each is a small draw-only module; each reads its layer's enable flag before touching pixels.
+- **`src/ui/coastline_overlay.cpp`** and **`src/ui/land_overlay.cpp`** — each is a small draw-only module; each reads its layer's enable flag before touching pixels.
 
 ## 3. Airport + runway overlays
 

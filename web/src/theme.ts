@@ -33,7 +33,6 @@ export const COLORS = {
   runwayLabel:     "rgb(107, 211, 231)",    // light cyan airport label
   land:            "rgb(8, 20, 33)",        // subtle land tint (barely above water)
   coastline:       "rgb(44, 70, 68)",       // subtle teal border
-  road:            "rgb(107, 109, 132)",    // slate gray highway
   emergency:       "rgb(255, 0, 0)",        // red (pure — no BGR swap for emergency)
 } as const;
 

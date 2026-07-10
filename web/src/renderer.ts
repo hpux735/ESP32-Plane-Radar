@@ -80,25 +80,6 @@ function drawCoastline(ctx: CanvasRenderingContext2D, view: ViewFrame, coastline
   ctx.stroke();
 }
 
-function drawRoads(ctx: CanvasRenderingContext2D, view: ViewFrame, roads: MapData["roads"]): void {
-  if (!state.layers.roads) return;
-  ctx.strokeStyle = COLORS.road;
-  ctx.lineWidth = 1.4;
-  ctx.beginPath();
-  for (const road of roads) {
-    let prev: [number, number] | null = null;
-    for (const [lon, lat] of road.points) {
-      const p = project(view, lat, lon);
-      if (prev && segmentOnScreen(prev[0], prev[1], p[0], p[1])) {
-        ctx.moveTo(prev[0], prev[1]);
-        ctx.lineTo(p[0], p[1]);
-      }
-      prev = p;
-    }
-  }
-  ctx.stroke();
-}
-
 function drawRings(ctx: CanvasRenderingContext2D): void {
   ctx.strokeStyle = COLORS.grid;
   ctx.lineWidth = 1;
@@ -187,7 +168,7 @@ export function renderFrame(ctx: CanvasRenderingContext2D, data: MapData): void 
   const map = selectMap(data, state.centerLat, state.centerLon);
   const bay = state.centerLat >= 35.96 && state.centerLat <= 39.56 &&
               state.centerLon >= -124.69 && state.centerLon <= -120.13;
-  // Land is CLIPPED to the outer disc; the coastline/roads sit over it and
+  // Land is CLIPPED to the outer disc; the coastline sits over it and
   // also inside the disc. Order matches drawStaticGrid in the firmware.
   clipToOuterDisc(ctx);
   drawLand(ctx, view, map.land);
@@ -250,7 +231,6 @@ export function renderFrame(ctx: CanvasRenderingContext2D, data: MapData): void 
   // gives us Hudson, Mississippi, Missouri, etc. as centerlines only,
   // not polygons — good enough at radar zoom to say "there's a river."
   drawCoastline(ctx, view, map.rivers);
-  drawRoads(ctx, view, map.roads);
   unclip(ctx);
 
   drawRings(ctx);

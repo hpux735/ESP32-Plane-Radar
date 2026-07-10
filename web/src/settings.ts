@@ -21,7 +21,6 @@ interface LayerDef { id: LayerId; label: string; }
 const LAYERS: LayerDef[] = [
   { id: "coast",   label: "Coast" },
   { id: "land",    label: "Land" },
-  { id: "roads",   label: "Roads" },
   { id: "runways", label: "Runways" },
   { id: "tags",    label: "Tags" },
 ];

@@ -14,7 +14,6 @@ constexpr char kPrefsNamespace[] = "layers";
 constexpr LayerStyle kLayerDefaults[static_cast<size_t>(Layer::kCount)] = {
     {"coastline",     true},
     {"land",          true},
-    {"roads",         true},
     {"runways_large", true},
     {"runways_focus", true},
     {"aircraft_tags", true},
@@ -22,7 +21,7 @@ constexpr LayerStyle kLayerDefaults[static_cast<size_t>(Layer::kCount)] = {
 
 LayerStyle s_layers[static_cast<size_t>(Layer::kCount)] = {
     kLayerDefaults[0], kLayerDefaults[1], kLayerDefaults[2],
-    kLayerDefaults[3], kLayerDefaults[4], kLayerDefaults[5],
+    kLayerDefaults[3], kLayerDefaults[4],
 };
 
 inline size_t idx(Layer l) { return static_cast<size_t>(l); }

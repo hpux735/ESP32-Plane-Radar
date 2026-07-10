@@ -4,7 +4,7 @@
 
 import { RANGE_PRESETS } from "./theme";
 
-export type LayerId = "coast" | "land" | "roads" | "runways" | "tags";
+export type LayerId = "coast" | "land" | "runways" | "tags";
 export type ViewMode = "radar" | "weather" | "cockpit";
 
 export interface FocusPoint {
@@ -122,7 +122,6 @@ function isFocusRing(v: unknown): v is FocusPoint[] {
 const DEFAULT_LAYERS: Record<LayerId, boolean> = {
   coast: true,
   land: true,
-  roads: false,   // opt-in per user preference
   runways: true,
   tags: true,
 };
@@ -131,8 +130,7 @@ function isLayers(v: unknown): v is Record<LayerId, boolean> {
   if (typeof v !== "object" || v === null) return false;
   const l = v as Record<string, unknown>;
   return typeof l.coast === "boolean" && typeof l.land === "boolean" &&
-         typeof l.roads === "boolean" && typeof l.runways === "boolean" &&
-         typeof l.tags === "boolean";
+         typeof l.runways === "boolean" && typeof l.tags === "boolean";
 }
 
 interface SessionState { focusIdx: number; rangeIdx: number; }
