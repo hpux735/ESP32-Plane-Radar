@@ -1,0 +1,83 @@
+# US airports with published instrument approach procedures.
+#
+# The tile pipeline force-includes any 4-letter ICAO here in the airport
+# layer regardless of size or scheduled-service status, so small GA
+# fields with GPS/ILS approaches still appear on the radar for IFR
+# pilots planning to them.
+#
+# Source: FAA CIFP (Coded Instrument Flight Procedures) — the ARINC 424
+# monthly ZIP at faa.gov. The file below is a hand-curated bootstrap
+# focused on the Bay Area + a broad sampling of US IAP airports so the
+# initial tile bake is meaningful. A future commit will replace this
+# file with an auto-refreshed dump from the FAA feed on the same
+# monthly cadence as the tile rebuild.
+#
+# One ICAO per line. Comments (#) and blank lines are ignored.
+# Case-insensitive.
+
+# --- Bay Area focus airports ---
+KSFO
+KOAK
+KSJC
+KHAF
+KSQL
+KPAO
+KNUQ
+KHWD
+KRHV
+KCCR
+KLVK
+KAPC
+
+# --- Sampling of major US IAP hubs (partial; will be auto-refreshed) ---
+KJFK
+KLGA
+KEWR
+KORD
+KMDW
+KATL
+KDFW
+KDEN
+KLAX
+KSEA
+KMIA
+KBOS
+KIAD
+KDCA
+KBWI
+KPHX
+KLAS
+KMSP
+KDTW
+KPHL
+KCLT
+KMCO
+KTPA
+KFLL
+KIAH
+KHOU
+KAUS
+KSAT
+KSAN
+KPDX
+KSMF
+KRNO
+KABQ
+KTUS
+KSLC
+KMSY
+KMEM
+KBNA
+KCVG
+KIND
+KCLE
+KPIT
+KBUF
+KROC
+KSYR
+KALB
+KBDL
+KPVD
+KMHT
+KPWM
+KBGR

@@ -5,6 +5,11 @@ release/
 .vscode/launch.json
 .vscode/ipch
 .local-data/
+# Locally-baked tile pyramid — the CI workflow force-adds these under
+# web/public/data/tiles/ once a month. Contributors experimenting with
+# scripts/build_tiles.py locally shouldn't accidentally commit their
+# own bake alongside a code change.
+web/public/data/tiles/
 scripts/__pycache__/
 tests/__pycache__/
 .venv-test/

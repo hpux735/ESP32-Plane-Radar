@@ -15,11 +15,15 @@ Layout:
       section_count uint8
       reserved     1 byte   (0)
 
-    Section index (8 bytes per entry, section_count entries)
+    Section index (12 bytes per entry, section_count entries)
       kind         uint8    (see SECTION_* constants)
-      reserved     1 byte
-      offset       uint16   (bytes from start of file)
+      reserved     3 bytes  (0 — reserved for future flags)
+      offset       uint32   (bytes from start of file)
       length       uint32
+
+    z=3 tiles (each covers 45°×22.5°) can pack a full continent of
+    coastline+land into hundreds of KB — the offset field is uint32
+    so an oversized section doesn't corrupt the header.
 
     Section payloads follow, in the order given by the index. Each
     payload's format is decided by its section kind:
@@ -71,7 +75,7 @@ SECTION_WATER = 2
 SECTION_AIRPORTS = 3
 
 HEADER_STRUCT = struct.Struct("<4sBBHHBB")   # 12 bytes
-INDEX_STRUCT = struct.Struct("<BBHI")        # 8 bytes
+INDEX_STRUCT = struct.Struct("<B3xII")       # 12 bytes: kind, pad, offset, length
 
 
 def deg_to_e7(deg: float) -> int:
@@ -262,11 +266,7 @@ def encode(tile: Tile) -> bytes:
     payload = bytearray()
     offset = payload_start
     for kind, data in sections:
-        if offset > 0xFFFF:
-            raise ValueError(
-                f"tile too large: section {kind} would start at offset {offset}"
-            )
-        index += INDEX_STRUCT.pack(kind, 0, offset, len(data))
+        index += INDEX_STRUCT.pack(kind, offset, len(data))
         payload += data
         offset += len(data)
 
@@ -289,7 +289,7 @@ def decode(data: bytes) -> Tile:
     off = HEADER_STRUCT.size
     entries: list[tuple[int, int, int]] = []
     for _ in range(section_count):
-        kind, _res, sec_off, sec_len = INDEX_STRUCT.unpack_from(data, off)
+        kind, sec_off, sec_len = INDEX_STRUCT.unpack_from(data, off)
         off += INDEX_STRUCT.size
         entries.append((kind, sec_off, sec_len))
 

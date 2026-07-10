@@ -144,7 +144,7 @@ def test_unknown_section_kinds_are_silently_ignored():
     header = tf.HEADER_STRUCT.pack(tf.MAGIC, tf.VERSION, 0, 0, 0, 1, 0)
     payload = b"junk"
     offset = tf.HEADER_STRUCT.size + tf.INDEX_STRUCT.size
-    index = tf.INDEX_STRUCT.pack(77, 0, offset, len(payload))  # kind=77
+    index = tf.INDEX_STRUCT.pack(77, offset, len(payload))  # kind=77
     data = header + index + payload
     back = tf.decode(data)
     assert back.coast == [] and back.airports == []
@@ -157,6 +157,33 @@ def test_polyline_bbox_matches_extremes():
     assert tf.e7_to_deg(mx_lat) == pytest.approx(52.5)
     assert tf.e7_to_deg(mn_lon) == pytest.approx(-3.0)
     assert tf.e7_to_deg(mx_lon) == pytest.approx(2.5)
+
+
+def test_section_offset_beyond_64kb_round_trips():
+    """z=3 tiles cover 45°×22.5° — enough to hold a whole continent
+    of coast+land+airports. First-cut format used a uint16 section
+    offset (64 KB cap) which exploded on the initial real-data bake.
+    Regression: ensure a tile large enough to push the airport
+    section past 64 KB still encodes and decodes cleanly.
+    """
+    # 5000 coastline points ≈ 5000 × 8 = 40 KB, plus overhead. Combined
+    # with a matching land polygon this pushes the airport section
+    # comfortably past 64 KB.
+    coast_pts = [(i * 0.001, i * 0.001) for i in range(5000)]
+    land_pts = [(i * 0.001, i * 0.001) for i in range(5000)]
+    airport = tf.Airport(ident="ZZZZ", lat=0.0, lon=0.0)
+    t = tf.Tile(
+        z=3, x=4, y=3,
+        coast=[tf.Polyline(coast_pts)],
+        land=[tf.Polyline(land_pts)],
+        airports=[airport],
+    )
+    data = tf.encode(t)
+    assert len(data) > 65_536  # confirms the airport section really is past 64 KB
+    back = tf.decode(data)
+    assert len(back.coast[0].points) == 5000
+    assert len(back.land[0].points) == 5000
+    assert back.airports[0].ident == "ZZZZ"
 
 
 def test_large_polyline_round_trips_correctly():
