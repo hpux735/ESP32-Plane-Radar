@@ -30,6 +30,7 @@ namespace {
 enum class Screen : uint8_t { Radar, MetarWeather, Cockpit };
 
 bool g_radar_visible = false;
+bool g_offline_banner_drawn = false;
 Screen g_screen = Screen::Radar;
 unsigned long g_wifi_down_since = 0;
 unsigned long g_last_reconnect_ms = 0;
@@ -174,16 +175,25 @@ void loop() {
     }
 
     const unsigned long down_ms = millis() - g_wifi_down_since;
+    // After the grace window, replace the stale radar frame with a clear
+    // "no network" banner so the desk toy never sits on a half-working
+    // screen. Drawn once; reset when Wi-Fi comes back.
+    if (down_ms >= config::kWifiDownGraceMs && !g_offline_banner_drawn) {
+      statusScreenOffline();
+      g_offline_banner_drawn = true;
+    }
     if (down_ms >= config::kWifiDownGraceMs &&
         millis() - g_last_reconnect_ms >= config::kWifiReconnectIntervalMs) {
       g_last_reconnect_ms = millis();
       if (wifiReconnect()) {
         g_wifi_down_since = 0;
+        g_offline_banner_drawn = false;
         showRadarIfConnected();
       }
     }
   } else {
     g_wifi_down_since = 0;
+    g_offline_banner_drawn = false;
     services::outdoor_temp::loop();
     // Kicks a tile download only when the location tile has changed.
     services::tile_fetch::loop();

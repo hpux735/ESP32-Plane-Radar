@@ -96,6 +96,10 @@ void drawTextBlock(uint16_t bg, uint16_t fg, const TextLine* lines, size_t count
     tft.drawString(lines[i].text, kCenterX, y + h / 2);
     y += h + kLineGap;
   }
+  // Force a flush so the SDL panel picks up the direct-to-tft writes. On
+  // the ESP32 SPI display this is a no-op; on Panel_sdl it drains the
+  // pending framebuffer into the texture the auto-screenshot reads.
+  tft.display();
 }
 
 constexpr float kConnectingDetailVlw = 0.92f;
@@ -228,6 +232,17 @@ void statusScreenConnectFailed() {
       {"and signal strength.", 1.0f, &kGfxBody},
       {"Hold BOOT 3 sec", 1.0f, &kGfxBody},
       {"to reset Wi-Fi", 1.0f, &kGfxBody},
+  };
+  drawTextBlock(config::kColorYellow, config::kTextOnYellow, lines,
+                sizeof(lines) / sizeof(lines[0]));
+}
+
+void statusScreenOffline() {
+  const TextLine lines[] = {
+      {"No Wi-Fi", 1.20f, &kPortalGfxTitle},
+      {"Retrying", 1.0f, &kPortalGfxBody},
+      {"Hold BOOT 3 sec", 1.0f, &kPortalGfxBody},
+      {"to reset network", 1.0f, &kPortalGfxBody},
   };
   drawTextBlock(config::kColorYellow, config::kTextOnYellow, lines,
                 sizeof(lines) / sizeof(lines[0]));

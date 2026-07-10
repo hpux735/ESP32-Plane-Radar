@@ -29,6 +29,7 @@
 #include "ui/layer_style.h"
 #include "ui/radar_display.h"
 #include "ui/radar_range.h"
+#include "ui/status_screens.h"
 #include "ui/weather_map.h"
 
 // Loads the pre-baked SF-area tile into TileStore at boot — emulator
@@ -39,7 +40,7 @@ namespace host { void loadBootstrapTiles(); }
 namespace {
 
 constexpr uint8_t kShotFakeGpio = 10;
-enum class Screen : uint8_t { Radar, MetarWeather, Cockpit };
+enum class Screen : uint8_t { Radar, MetarWeather, Cockpit, Offline };
 Screen g_screen = Screen::Radar;
 unsigned long g_last_non_radar_draw_ms = 0;
 constexpr const char* kShotPath = "/tmp/plane-radar-screenshot.ppm";
@@ -100,6 +101,16 @@ void enterCockpit() {
   ui::cockpit::refresh();
   ui::cockpit::draw();
   g_last_non_radar_draw_ms = millis();
+}
+
+// Dev-only preview of the real firmware's offline banner. On hardware the
+// banner is triggered by an actual Wi-Fi drop; here we can't easily fake
+// that, so an env var opens the same screen for screenshots and design
+// review. Not user-facing — parity aid only.
+void enterOffline() {
+  g_screen = Screen::Offline;
+  std::printf("View: offline banner (dev preview)\n");
+  statusScreenOffline();
 }
 
 void returnToRadar() {
@@ -179,6 +190,8 @@ void setup() {
   if (wxvar && wxvar[0] == '1') enterMetarWeather();
   const char* cpvar = std::getenv("PLANE_RADAR_COCKPIT");
   if (cpvar && cpvar[0] == '1') enterCockpit();
+  const char* offvar = std::getenv("PLANE_RADAR_OFFLINE");
+  if (offvar && offvar[0] == '1') enterOffline();
 }
 
 void loop() {
@@ -201,6 +214,9 @@ void loop() {
         else                       returnToRadar();
         break;
       case Screen::Cockpit:
+        returnToRadar();
+        break;
+      case Screen::Offline:
         returnToRadar();
         break;
     }
@@ -230,6 +246,8 @@ void loop() {
       ui::cockpit::refresh();
       ui::cockpit::draw();
     }
+  } else if (g_screen == Screen::Offline) {
+    // Static banner — no per-frame work.
   } else {
     // adsb.fi's public rate limit is 1 req/s; matching the firmware's 3 s poll.
     if (now - last_adsb_ms >= 3000) {
