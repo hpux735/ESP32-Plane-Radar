@@ -40,9 +40,18 @@ namespace host { void loadBootstrapTiles(); }
 namespace {
 
 constexpr uint8_t kShotFakeGpio = 10;
-enum class Screen : uint8_t { Radar, MetarWeather, Cockpit, Offline };
-Screen g_screen = Screen::Radar;
+// Screen ring: 0..focus_count-1 = radar at each focus; then Weather,
+// Cockpit; then a dev-only Offline preview position that only the env
+// var can reach (not part of the user-facing tap ring). Mirrors the
+// firmware in src/main.cpp so the SDL emulator behaves identically.
+size_t g_ring_index = 0;
+bool g_offline_preview = false;
 unsigned long g_last_non_radar_draw_ms = 0;
+
+inline size_t ringLength() { return services::focus::count() + 2; }
+inline bool onRadar()   { return !g_offline_preview && g_ring_index < services::focus::count(); }
+inline bool onWeather() { return !g_offline_preview && g_ring_index == services::focus::count(); }
+inline bool onCockpit() { return !g_offline_preview && g_ring_index == services::focus::count() + 1; }
 constexpr const char* kShotPath = "/tmp/plane-radar-screenshot.ppm";
 constexpr unsigned long kAutoShotIntervalMs = 200;
 
@@ -66,20 +75,13 @@ void saveScreenshot(const char* path) {
   std::fclose(f);
 }
 
-void onRangeTap() {
-  ui::radar::rangeNext();
-  char label[12];
-  ui::radar::formatCurrentRangeLabel(label, sizeof(label));
-  std::printf("Range: %s (outer ~%.0f km)\n", label,
-              ui::radar::rangeCurrent().outer_km);
-  ui::radarDisplayDraw();
-}
-
-void onFocusTap() {
-  services::focus::cycle();
+void enterRadar(size_t focus_idx) {
+  g_offline_preview = false;
+  g_ring_index = focus_idx;
+  services::focus::setIndex(focus_idx);
   const auto& fp = services::focus::current();
-  std::printf("Focus: %s (%.4f, %.4f)\n", fp.name, services::location::lat(),
-              services::location::lon());
+  std::printf("View: radar @ %s (%.4f, %.4f)\n", fp.name,
+              services::location::lat(), services::location::lon());
   // Kick a fresh fetch so the new center's traffic loads immediately.
   services::adsb::fetchUpdate(services::location::lat(),
                               services::location::lon(),
@@ -88,7 +90,8 @@ void onFocusTap() {
 }
 
 void enterMetarWeather() {
-  g_screen = Screen::MetarWeather;
+  g_offline_preview = false;
+  g_ring_index = services::focus::count();
   std::printf("View: METAR weather\n");
   ui::weather::refresh();
   ui::weather::draw();
@@ -96,7 +99,8 @@ void enterMetarWeather() {
 }
 
 void enterCockpit() {
-  g_screen = Screen::Cockpit;
+  g_offline_preview = false;
+  g_ring_index = services::focus::count() + 1;
   std::printf("View: cockpit\n");
   ui::cockpit::refresh();
   ui::cockpit::draw();
@@ -108,15 +112,42 @@ void enterCockpit() {
 // that, so an env var opens the same screen for screenshots and design
 // review. Not user-facing — parity aid only.
 void enterOffline() {
-  g_screen = Screen::Offline;
+  g_offline_preview = true;
   std::printf("View: offline banner (dev preview)\n");
   statusScreenOffline();
 }
 
-void returnToRadar() {
-  g_screen = Screen::Radar;
-  std::printf("View: radar\n");
-  ui::radarDisplayDraw();
+// Advance to the next screen in the ring; wraps back to radar 0.
+void advanceRing() {
+  if (g_offline_preview) { enterRadar(0); return; }
+  const size_t next = (g_ring_index + 1) % ringLength();
+  if (next < services::focus::count())      enterRadar(next);
+  else if (next == services::focus::count()) enterMetarWeather();
+  else                                        enterCockpit();
+}
+
+// Single-tap = adjust the current screen. Mirrors src/main.cpp's
+// adjustCurrent(): range cycle on radar, refresh on weather, nothing on
+// cockpit. Offline preview treats any tap as "return to radar."
+void adjustCurrent() {
+  if (g_offline_preview) { enterRadar(0); return; }
+  if (onRadar()) {
+    ui::radar::rangeNext();
+    char label[12];
+    ui::radar::formatCurrentRangeLabel(label, sizeof(label));
+    std::printf("Range: %s (outer ~%.0f km)\n", label,
+                ui::radar::rangeCurrent().outer_km);
+    ui::radarDisplayDraw();
+    return;
+  }
+  if (onWeather()) {
+    std::printf("Weather: manual refresh\n");
+    ui::weather::refresh();
+    ui::weather::draw();
+    g_last_non_radar_draw_ms = millis();
+    return;
+  }
+  // Cockpit — no-op.
 }
 
 bool consumeShotKey() {
@@ -157,9 +188,10 @@ bool consumeLayerKey(const KeyBinding& kb) {
 void setup() {
   std::printf(
       "Plane Radar — SDL emulator\n"
-      "  SPACE  : tap  (single=range, double=focus, triple=advance screen)\n"
-      "           Radar → METAR weather → Cockpit → Radar\n"
-      "           (any tap on a non-radar screen returns to radar)\n"
+      "  SPACE  : tap  (single = adjust current screen,\n"
+      "                 double = advance ring)\n"
+      "           Radar@Home → Radar@Focus2 → Radar@Focus3\n"
+      "                     → Weather → Cockpit → wraps back\n"
       "  S      : save screenshot\n"
       "  1..5   : toggle layer (coastline / land /\n"
       "           runways-large / runways-focus / aircraft-tags)\n");
@@ -176,6 +208,7 @@ void setup() {
   services::metar_config::init();
   ui::radar::rangeInit();
   services::focus::init();
+  g_ring_index = services::focus::currentIndex();
   ui::layers::init();
   ui::cockpit::init();
   ui::radarDisplayDraw();
@@ -199,28 +232,8 @@ void loop() {
   static unsigned long last_adsb_ms = 0;
   bootButtonPollLongPress();
   const BootTap ev = bootButtonConsumeEvent();
-  if (ev != BootTap::None) {
-    switch (g_screen) {
-      case Screen::Radar:
-        switch (ev) {
-          case BootTap::Single: onRangeTap(); break;
-          case BootTap::Double: onFocusTap(); break;
-          case BootTap::Triple: enterMetarWeather(); break;
-          case BootTap::None: break;
-        }
-        break;
-      case Screen::MetarWeather:
-        if (ev == BootTap::Triple) enterCockpit();
-        else                       returnToRadar();
-        break;
-      case Screen::Cockpit:
-        returnToRadar();
-        break;
-      case Screen::Offline:
-        returnToRadar();
-        break;
-    }
-  }
+  if (ev == BootTap::Single)      adjustCurrent();
+  else if (ev == BootTap::Double) advanceRing();
   if (consumeShotKey()) {
     saveScreenshot(kShotPath);
     std::printf("screenshot: %s\n", kShotPath);
@@ -228,25 +241,25 @@ void loop() {
   for (const auto& kb : kLayerKeys) {
     if (consumeLayerKey(kb)) {
       ui::layers::toggle(kb.layer);
-      if (g_screen == Screen::Radar) ui::radarDisplayDraw();
+      if (onRadar()) ui::radarDisplayDraw();
     }
   }
 
   const unsigned long now = millis();
   services::outdoor_temp::loop();
-  if (g_screen == Screen::MetarWeather) {
+  if (onWeather()) {
     if (now - g_last_non_radar_draw_ms >= 1000) {
       g_last_non_radar_draw_ms = now;
       ui::weather::refresh();
       ui::weather::draw();
     }
-  } else if (g_screen == Screen::Cockpit) {
+  } else if (onCockpit()) {
     if (now - g_last_non_radar_draw_ms >= 1000) {
       g_last_non_radar_draw_ms = now;
       ui::cockpit::refresh();
       ui::cockpit::draw();
     }
-  } else if (g_screen == Screen::Offline) {
+  } else if (g_offline_preview) {
     // Static banner — no per-frame work.
   } else {
     // adsb.fi's public rate limit is 1 req/s; matching the firmware's 3 s poll.

@@ -27,9 +27,11 @@ size_t s_ring_count = 0;
 uint8_t s_index = 0;
 unsigned long s_overlay_shown_at_ms = 0;
 
-// Bay Area fallback ring used when the "focus.ring" preference is empty or
-// malformed. Coordinates from OurAirports; default range picked per each
-// field's typical traffic (Class B/C = 10 nm, GA = 5 nm).
+// Default focus ring used when the "focus.ring" preference is empty or
+// malformed. Two airports plus the synthetic Home slot (added elsewhere) —
+// the whole app now navigates a 5-screen ring (3 radars + weather +
+// cockpit) via single/double tap, so the number of focus slots directly
+// caps how many radar screens are in the ring.
 struct BakedAirport {
   const char* name;
   double lat;
@@ -39,11 +41,6 @@ struct BakedAirport {
 constexpr BakedAirport kFallbackAirports[] = {
     {"SFO", 37.6188, -122.3750, 1},  // Class B
     {"OAK", 37.7213, -122.2214, 1},  // Class C
-    {"SJC", 37.3639, -121.9289, 1},  // Class C
-    {"HWD", 37.6591, -122.1214, 0},  // GA
-    {"SQL", 37.5119, -122.2495, 0},  // GA
-    {"PAO", 37.4611, -122.1150, 0},  // GA
-    {"HAF", 37.5136, -122.5006, 0},  // GA
 };
 constexpr size_t kFallbackCount =
     sizeof(kFallbackAirports) / sizeof(kFallbackAirports[0]);
@@ -149,7 +146,12 @@ void init() {
 
 void cycle() {
   if (s_ring_count == 0) return;
-  s_index = static_cast<uint8_t>((s_index + 1) % s_ring_count);
+  setIndex(static_cast<size_t>((s_index + 1) % s_ring_count));
+}
+
+void setIndex(size_t idx) {
+  if (s_ring_count == 0 || idx >= s_ring_count) return;
+  s_index = static_cast<uint8_t>(idx);
   applyCurrent();
   Preferences prefs;
   if (prefs.begin(kPrefsNamespace, false)) {
@@ -161,6 +163,8 @@ void cycle() {
 }
 
 const FocusPoint& current() { return s_ring[s_index]; }
+
+size_t currentIndex() { return s_index; }
 
 size_t count() { return s_ring_count; }
 

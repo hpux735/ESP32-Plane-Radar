@@ -134,21 +134,48 @@ async function ensureTiles(): Promise<void> {
 
 // Central gesture handler — one place so canvas taps, hint buttons, and
 // the space key all route through the same logic. Mirrors the firmware's
-// three-position dispatcher: Radar → Weather → Cockpit → Radar. Any
-// single/double tap from a non-radar view returns to radar.
+// two-gesture dispatcher (src/main.cpp):
+//   single = adjust current screen (range on radar, refresh on weather)
+//   double = advance to next screen in the ring
+// Screen ring: Radar@Home → Radar@focus[1] → ... → Weather → Cockpit → wraps.
 function handleGesture(tap: Tap): void {
+  if (tap === "single") adjustCurrent();
+  else                  advanceRing();
+}
+
+function adjustCurrent(): void {
   if (state.view === "weather") {
-    if (tap === "triple") enterCockpit();
-    else                  setView("radar");
+    // Manual refresh: bypass the "stale enough?" gate so the user's tap
+    // always kicks a fetch.
+    invalidateMetar();
+    refreshIfStale().then(() => requestFrame()).catch(() => { /* no-op */ });
     return;
   }
-  if (state.view === "cockpit") {
-    setView("radar");
-    return;
+  if (state.view === "cockpit") return;  // No user-tunable state.
+  cycleRange();
+}
+
+function advanceRing(): void {
+  // Ring position: 0..focusRing.length-1 → radar at that focus;
+  // focusRing.length → weather; focusRing.length+1 → cockpit.
+  const ringLen = state.focusRing.length + 2;
+  const currentPos =
+      state.view === "weather" ? state.focusRing.length
+    : state.view === "cockpit" ? state.focusRing.length + 1
+    : Math.max(0, state.focusIdx);
+  const next = (currentPos + 1) % ringLen;
+  if (next < state.focusRing.length) {
+    // Land on a radar focus slot. cycleFocus() advances by 1; call it
+    // enough times to reach `next` from the current focus.
+    if (state.view !== "radar") setView("radar");
+    const delta = (next - Math.max(0, state.focusIdx) + state.focusRing.length)
+                    % state.focusRing.length;
+    for (let i = 0; i < delta; i++) cycleFocus();
+  } else if (next === state.focusRing.length) {
+    enterWeather();
+  } else {
+    enterCockpit();
   }
-  if (tap === "single") cycleRange();
-  else if (tap === "double") cycleFocus();
-  else if (tap === "triple") enterWeather();
 }
 
 function startNonRadarTicker(): void {
@@ -235,7 +262,7 @@ function mountHintButtons(): void {
   for (const btn of buttons) {
     btn.addEventListener("click", () => {
       const g = btn.dataset.gesture;
-      if (g === "single" || g === "double" || g === "triple") {
+      if (g === "single" || g === "double") {
         handleGesture(g);
       }
     });

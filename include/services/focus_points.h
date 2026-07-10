@@ -27,6 +27,15 @@ void init();
  *  range preset. Persists the new index. */
 void cycle();
 
+/** Jump to a specific focus by index, apply its lat/lon + default range
+ *  preset. Persists the new index. Ignored if `idx >= count()`. Used by
+ *  the two-gesture screen ring in main.cpp — each radar slot in the ring
+ *  maps to a fixed focus index. */
+void setIndex(size_t idx);
+
+/** Current focus index (0..count()-1). */
+size_t currentIndex();
+
 /** Current focus in the ring. Home reads lat/lon from services::location. */
 const FocusPoint& current();
 

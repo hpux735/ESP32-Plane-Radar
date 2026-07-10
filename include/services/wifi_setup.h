@@ -20,11 +20,12 @@ bool bootButtonConsumeTap();
 void bootButtonPollLongPress();
 
 /** Tap-pattern discriminator.
- *  Single = cycle range, Double = cycle focus, Triple = enter/exit
- *  weather-map view. Discrimination window is ~400 ms — the tradeoff for
- *  triple support is that Single fires ~150 ms later than the earlier
- *  single-vs-double-only design. */
-enum class BootTap : uint8_t { None, Single, Double, Triple };
+ *  Single = adjust current screen (range on radar, refresh on weather).
+ *  Double = advance to the next screen in the ring. The button-side
+ *  path uses a ~250 ms software window to distinguish Single vs Double;
+ *  the accelerometer path bypasses the window and reports each
+ *  hardware-discriminated event immediately. */
+enum class BootTap : uint8_t { None, Single, Double };
 /** Consume the pending tap event (if any). Call once per loop after
  *  bootButtonPollLongPress(). */
 BootTap bootButtonConsumeEvent();

@@ -474,13 +474,14 @@ bool bootButtonConsumeTap() {
 }
 
 // Tap-count discriminator. Waits kMultiTapWindowMs after the LAST tap; if
-// no further taps arrive, dispatches by count (1 → Single, 2 → Double,
-// 3 → Triple). Triple fires the moment the third tap lands. The window
-// grew from 250 ms (single/double only) to 400 ms so a human can
-// comfortably fit three taps — the trade is ~150 ms extra latency on the
-// Single event (which is fine; range cycling isn't latency-sensitive).
+// no further taps arrive in that window, dispatches by count (1 → Single,
+// 2 → Double). Double fires the moment the second tap lands. The window
+// is 250 ms — enough for a human double-tap, tight enough to keep the
+// perceptual delay on single-tap short. Triple-tap discrimination was
+// removed when the app collapsed to a two-gesture ring (single = adjust
+// current screen, double = advance to next).
 BootTap bootButtonConsumeEvent() {
-  constexpr unsigned long kMultiTapWindowMs = 400;
+  constexpr unsigned long kMultiTapWindowMs = 250;
   static uint8_t s_pending_count = 0;
   static unsigned long s_last_tap_ms = 0;
 
@@ -490,16 +491,15 @@ BootTap bootButtonConsumeEvent() {
   if (tap) {
     ++s_pending_count;
     s_last_tap_ms = now;
-    if (s_pending_count >= 3) {
+    if (s_pending_count >= 2) {
       s_pending_count = 0;
-      return BootTap::Triple;
+      return BootTap::Double;
     }
     return BootTap::None;
   }
   if (s_pending_count > 0 && (now - s_last_tap_ms) > kMultiTapWindowMs) {
-    const uint8_t n = s_pending_count;
     s_pending_count = 0;
-    return n == 1 ? BootTap::Single : BootTap::Double;
+    return BootTap::Single;
   }
   return BootTap::None;
 }

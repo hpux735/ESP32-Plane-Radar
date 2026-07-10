@@ -25,17 +25,27 @@
 
 namespace {
 
-// Three-position cycle driven by triple-tap. Single/double taps only mean
-// something on Radar; on MetarWeather/Cockpit any tap returns to Radar.
-enum class Screen : uint8_t { Radar, MetarWeather, Cockpit };
+// Two-gesture UX. The whole app is a ring of screens navigated with
+// double-tap; single-tap adjusts whatever's on the current screen.
+//   Radar#N (one per focus airport) → Weather → Cockpit → wraps.
+// Position 0 is the "Home" focus (services::location's saved home);
+// positions 1..N-1 mirror the focus ring's user-editable airports.
 
 bool g_radar_visible = false;
 bool g_offline_banner_drawn = false;
-Screen g_screen = Screen::Radar;
+size_t g_ring_index = 0;  // 0..focus_count-1 = radar; then Weather, Cockpit
 unsigned long g_wifi_down_since = 0;
 unsigned long g_last_reconnect_ms = 0;
 unsigned long g_last_adsb_fetch_ms = 0;
 unsigned long g_last_non_radar_draw_ms = 0;
+
+inline size_t ringLength() {
+  // N radar slots (one per focus airport) + weather + cockpit.
+  return services::focus::count() + 2;
+}
+inline bool onRadar()   { return g_ring_index < services::focus::count(); }
+inline bool onWeather() { return g_ring_index == services::focus::count(); }
+inline bool onCockpit() { return g_ring_index == services::focus::count() + 1; }
 
 void showRadarIfConnected() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -46,33 +56,20 @@ void showRadarIfConnected() {
   g_radar_visible = true;
 }
 
-void onRangeTap() {
-  ui::radar::rangeNext();
-  char range_label[12];
-  ui::radar::formatCurrentRangeLabel(range_label, sizeof(range_label));
-  Serial.printf("Range: %s (outer ~%.0f km)\n", range_label,
-                ui::radar::rangeCurrent().outer_km);
-
-  if (g_radar_visible && WiFi.status() == WL_CONNECTED) {
-    ui::radarDisplayDraw();
-  }
-}
-
-void onFocusTap() {
-  services::focus::cycle();
+void enterRadar(size_t focus_idx) {
+  services::focus::setIndex(focus_idx);
   const auto& fp = services::focus::current();
-  Serial.printf("Focus: %s\n", fp.name);
-  if (g_radar_visible && WiFi.status() == WL_CONNECTED) {
-    // Force a fresh fetch at the new center so the display updates fast.
+  Serial.printf("View: radar @ %s\n", fp.name);
+  if (WiFi.status() == WL_CONNECTED) {
+    // Force a fresh fetch at the new center so the first frame has traffic.
     services::adsb::fetchUpdate(services::location::lat(),
                                 services::location::lon(),
                                 ui::radar::fetchRadiusKm());
-    ui::radarDisplayDraw();
   }
+  showRadarIfConnected();
 }
 
 void enterMetarWeather() {
-  g_screen = Screen::MetarWeather;
   Serial.println("View: METAR weather");
   if (WiFi.status() == WL_CONNECTED) ui::weather::refresh();
   ui::weather::draw();
@@ -80,45 +77,54 @@ void enterMetarWeather() {
 }
 
 void enterCockpit() {
-  g_screen = Screen::Cockpit;
   Serial.println("View: cockpit");
   ui::cockpit::refresh();
   ui::cockpit::draw();
   g_last_non_radar_draw_ms = millis();
 }
 
-void returnToRadar() {
-  g_screen = Screen::Radar;
-  Serial.println("View: radar");
-  if (g_radar_visible && WiFi.status() == WL_CONNECTED) {
-    ui::radarDisplayDraw();
+// Advance to the next screen in the ring: 3 radar slots → weather →
+// cockpit → wrap. Skips the render for the destination screen up-front;
+// the loop's per-frame path will keep it painted from there.
+void advanceRing() {
+  g_ring_index = (g_ring_index + 1) % ringLength();
+  if (onRadar())        enterRadar(g_ring_index);
+  else if (onWeather()) enterMetarWeather();
+  else if (onCockpit()) enterCockpit();
+}
+
+// Single-tap = adjust the current screen in place.
+//   Radar   → cycle range preset.
+//   Weather → force an immediate METAR refresh.
+//   Cockpit → no-op (no user-tunable state).
+void adjustCurrent() {
+  if (onRadar()) {
+    ui::radar::rangeNext();
+    char range_label[12];
+    ui::radar::formatCurrentRangeLabel(range_label, sizeof(range_label));
+    Serial.printf("Range: %s (outer ~%.0f km)\n", range_label,
+                  ui::radar::rangeCurrent().outer_km);
+    if (g_radar_visible && WiFi.status() == WL_CONNECTED) {
+      ui::radarDisplayDraw();
+    }
+    return;
   }
+  if (onWeather()) {
+    Serial.println("Weather: manual refresh");
+    if (WiFi.status() == WL_CONNECTED) ui::weather::refresh();
+    ui::weather::draw();
+    g_last_non_radar_draw_ms = millis();
+    return;
+  }
+  // Cockpit — no-op.
 }
 
 void handleBootButton() {
   bootButtonPollLongPress();
   const BootTap ev = bootButtonConsumeEvent();
   if (ev == BootTap::None) return;
-
-  // Cycle: Radar → METAR → Cockpit → Radar. Triple-tap advances forward;
-  // any single/double tap on a non-radar screen returns home.
-  switch (g_screen) {
-    case Screen::Radar:
-      switch (ev) {
-        case BootTap::Single: onRangeTap(); break;
-        case BootTap::Double: onFocusTap(); break;
-        case BootTap::Triple: enterMetarWeather(); break;
-        case BootTap::None:   break;
-      }
-      break;
-    case Screen::MetarWeather:
-      if (ev == BootTap::Triple) enterCockpit();
-      else                       returnToRadar();
-      break;
-    case Screen::Cockpit:
-      returnToRadar();
-      break;
-  }
+  if (ev == BootTap::Single) adjustCurrent();
+  else                        advanceRing();  // Double
 }
 
 void fetchAndDrawAircraft() {
@@ -150,6 +156,10 @@ void setup() {
   services::metar_config::init();
   ui::radar::rangeInit();
   services::focus::init();
+  // Boot the ring at whichever focus was persisted so returning users see
+  // their last radar view. Weather / cockpit are always reached via
+  // double-tap and never persisted as boot state.
+  g_ring_index = services::focus::currentIndex();
   ui::layers::init();
   ui::cockpit::init();
   services::adsb::setPollFn(wifiLoop);
@@ -197,7 +207,7 @@ void loop() {
     services::outdoor_temp::loop();
     // Kicks a tile download only when the location tile has changed.
     services::tile_fetch::loop();
-    if (g_screen == Screen::MetarWeather) {
+    if (onWeather()) {
       // Repaint every ~1s so the "n min ago" age updates smoothly;
       // refresh() itself no-ops until the 5 min TTL expires.
       if (millis() - g_last_non_radar_draw_ms >= 1000) {
@@ -205,7 +215,7 @@ void loop() {
         ui::weather::refresh();
         ui::weather::draw();
       }
-    } else if (g_screen == Screen::Cockpit) {
+    } else if (onCockpit()) {
       // Repaint every ~1s for a smooth second-sweep.
       if (millis() - g_last_non_radar_draw_ms >= 1000) {
         g_last_non_radar_draw_ms = millis();

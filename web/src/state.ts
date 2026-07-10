@@ -31,15 +31,14 @@ export interface MetarConfig {
 // "Home" — the label is fixed and it reads its lat/lon from state.home
 // at render time. The default home coord is Sutro Tower (a public SF
 // broadcast landmark), never a private residence.
+// Two focus airports plus the synthetic Home slot. The whole app now
+// navigates a 5-screen ring (3 radars + weather + cockpit) via
+// single/double tap, so the size of this list caps how many radar
+// screens are in the ring.
 export const DEFAULT_FOCUS_RING: FocusPoint[] = [
   { label: "Home",  lat: 37.7552, lon: -122.4528, defaultRangeIdx: 1, isHome: true  },
   { label: "SFO",   lat: 37.6188, lon: -122.3750, defaultRangeIdx: 1, isHome: false },
   { label: "OAK",   lat: 37.7213, lon: -122.2214, defaultRangeIdx: 1, isHome: false },
-  { label: "SJC",   lat: 37.3639, lon: -121.9289, defaultRangeIdx: 1, isHome: false },
-  { label: "HWD",   lat: 37.6591, lon: -122.1214, defaultRangeIdx: 0, isHome: false },
-  { label: "SQL",   lat: 37.5119, lon: -122.2495, defaultRangeIdx: 0, isHome: false },
-  { label: "PAO",   lat: 37.4611, lon: -122.1150, defaultRangeIdx: 0, isHome: false },
-  { label: "HAF",   lat: 37.5136, lon: -122.5006, defaultRangeIdx: 0, isHome: false },
 ];
 
 // Kept as a re-export so any older imports still resolve. New code should

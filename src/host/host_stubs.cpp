@@ -332,13 +332,12 @@ void bootButtonPollLongPress() {
   // when we have no persistent WiFi credentials to reset.
 }
 
-// Tap-count discriminator. Waits kMultiTapWindowMs after the LAST tap; if
-// no further taps arrive, dispatches by count. Supporting Triple pushes
-// Single-tap latency from the old 250 ms up to ~400 ms — real cost, but
-// keeps the "single = the common thing, double/triple = escalating"
-// single-button model intact.
+// Tap-count discriminator. Mirrors the firmware side (wifi_setup.cpp) —
+// 250 ms software window distinguishes Single from Double. Two gestures
+// only; Triple was dropped when the app switched to the accelerometer +
+// two-gesture ring UX.
 BootTap bootButtonConsumeEvent() {
-  constexpr unsigned long kMultiTapWindowMs = 400;
+  constexpr unsigned long kMultiTapWindowMs = 250;
   static uint8_t s_pending_count = 0;
   static unsigned long s_last_tap_ms = 0;
 
@@ -348,17 +347,16 @@ BootTap bootButtonConsumeEvent() {
   if (tap) {
     ++s_pending_count;
     s_last_tap_ms = now;
-    // Triple fires immediately — no reason to wait for a hypothetical 4th.
-    if (s_pending_count >= 3) {
+    // Double fires the moment the second tap lands — no software wait.
+    if (s_pending_count >= 2) {
       s_pending_count = 0;
-      return BootTap::Triple;
+      return BootTap::Double;
     }
     return BootTap::None;
   }
   if (s_pending_count > 0 && (now - s_last_tap_ms) > kMultiTapWindowMs) {
-    const uint8_t n = s_pending_count;
     s_pending_count = 0;
-    return n == 1 ? BootTap::Single : BootTap::Double;
+    return BootTap::Single;
   }
   return BootTap::None;
 }
