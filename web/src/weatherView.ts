@@ -13,7 +13,7 @@ import {
   WX_COLORS,
 } from "./theme";
 import { STATIONS, lastUpdateMs, type Category } from "./weather";
-import type { MapData } from "./data";
+import { selectMap, isInBay, type MapData, type LandData, type LonLat } from "./data";
 import { segmentOnScreen } from "./projection";
 import { state } from "./state";
 
@@ -211,9 +211,18 @@ function insideDisc(x: number, y: number): boolean {
   return dx * dx + dy * dy <= PROJECTION_PX * PROJECTION_PX;
 }
 
-function drawLand(ctx: CanvasRenderingContext2D, fit: Fit, data: MapData): void {
-  const { vertices, triangles } = data.land;
-  ctx.fillStyle = COLORS.land;
+// Pick Bay-Area high-detail or CONUS coarse layers off the current
+// METAR center, mirroring what renderer.ts does for the radar view.
+// Weather view uses state.metar.center*, not the radar center — the two
+// are edited independently in settings.
+function selectWeatherMap(data: MapData) {
+  return selectMap(data, state.metar.centerLat, state.metar.centerLon);
+}
+
+function drawLandLayer(ctx: CanvasRenderingContext2D, fit: Fit,
+                       land: LandData, fill: string): void {
+  const { vertices, triangles } = land;
+  ctx.fillStyle = fill;
   ctx.beginPath();
   for (const [ia, ib, ic] of triangles) {
     const [ax, ay] = project(fit, vertices[ia][1], vertices[ia][0]);
@@ -229,14 +238,48 @@ function drawLand(ctx: CanvasRenderingContext2D, fit: Fit, data: MapData): void 
     ctx.lineTo(cx, cy);
     ctx.closePath();
   }
-  ctx.fill();
+  ctx.fill("evenodd");
 }
 
-function drawCoast(ctx: CanvasRenderingContext2D, fit: Fit, data: MapData): void {
+// OSM water polygons (Hudson, Chesapeake, Long Island Sound, SF tidal
+// tributaries, etc.) painted as background-color cutouts over the land
+// tint. Same treatment renderer.ts does at radar zoom — usually only a
+// handful of polygons are on-screen even in dense areas.
+function drawWaterCutouts(ctx: CanvasRenderingContext2D, fit: Fit,
+                          rings: LonLat[][]): void {
+  ctx.fillStyle = COLORS.background;
+  ctx.beginPath();
+  for (const ring of rings) {
+    let minLat = ring[0][1], maxLat = ring[0][1];
+    let minLon = ring[0][0], maxLon = ring[0][0];
+    for (const [lon, lat] of ring) {
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+      if (lon < minLon) minLon = lon;
+      if (lon > maxLon) maxLon = lon;
+    }
+    const [x1, y1] = project(fit, minLat, minLon);
+    const [x2, y2] = project(fit, maxLat, maxLon);
+    const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+    const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+    if (maxX < 0 || minX >= SIZE || maxY < 0 || minY >= SIZE) continue;
+    let first = true;
+    for (const [lon, lat] of ring) {
+      const [x, y] = project(fit, lat, lon);
+      if (first) { ctx.moveTo(x, y); first = false; }
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+  ctx.fill("evenodd");
+}
+
+function drawCoastLines(ctx: CanvasRenderingContext2D, fit: Fit,
+                        lines: LonLat[][]): void {
   ctx.strokeStyle = COLORS.coastline;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (const line of data.coastline) {
+  for (const line of lines) {
     let prev: [number, number] | null = null;
     for (const [lon, lat] of line) {
       const p = project(fit, lat, lon);
@@ -325,8 +368,18 @@ export function drawWeatherView(
   const places = placeLabels(dots, halfW);
   ctx.fillStyle = COLORS.background;
   ctx.fillRect(0, 0, SIZE, SIZE);
-  drawLand(ctx, fit, data);
-  drawCoast(ctx, fit, data);
+  const map = selectWeatherMap(data);
+  const bay = isInBay(state.metar.centerLat, state.metar.centerLon);
+  drawLandLayer(ctx, fit, map.land, COLORS.land);
+  // Outside the Bay Area, punch water bodies back to background so
+  // Great Lakes cities and Atlantic-seaboard airports (LGA, JFK, LGA
+  // Sound) don't sit on a solid land wash.
+  if (!bay) {
+    drawLandLayer(ctx, fit, data.lakesConus, COLORS.background);
+    drawWaterCutouts(ctx, fit, data.waterConus);
+  }
+  drawCoastLines(ctx, fit, map.coastline);
+  drawCoastLines(ctx, fit, map.rivers);
   drawFreshness(ctx);
   ctx.font = LABEL_FONT;   // drawFreshness stomps the font
   ctx.textAlign = "center";
