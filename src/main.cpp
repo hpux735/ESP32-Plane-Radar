@@ -13,6 +13,7 @@
 #include "services/ota_update.h"
 #include "services/outdoor_temp.h"
 #include "services/radar_location.h"
+#include "services/tile_cache.h"
 #include "services/wifi_setup.h"
 #include "ui/cockpit_screen.h"
 #include "ui/layer_style.h"
@@ -143,6 +144,7 @@ void setup() {
     statusScreenPortal();
   }
   services::location::init();
+  services::tile_cache::mountAndHydrate();
   services::metar_config::init();
   ui::radar::rangeInit();
   services::focus::init();
