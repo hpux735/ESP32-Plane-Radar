@@ -39,7 +39,9 @@ jobs:
           cache: "npm"
           cache-dependency-path: web/package-lock.json
 
-      - run: npm ci
+      # `npm install` not `npm ci` — see tests.yml for the EBADPLATFORM
+      # story with esbuild's cross-platform optional deps in the lock.
+      - run: npm install --no-audit --no-fund
 
       - run: npm run build
 
