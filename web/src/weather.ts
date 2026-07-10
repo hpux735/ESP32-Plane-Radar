@@ -4,6 +4,15 @@
 //
 // One request per station (there's no bulk endpoint on NWS like there
 // is on aviationweather.gov), fired in parallel. Cached for 5 min.
+//
+// The station list itself is dynamic: rebuildStations() takes the
+// current METAR center/radius and picks the nearest airports (from
+// airport_index.json) that fall inside the visible disc. That's how the
+// map populates around JFK, ORD, or wherever the user points it — the
+// firmware equivalent (src/services/weather.cpp) uses aviationweather's
+// bbox endpoint; the browser can't (no CORS), so we filter locally.
+
+import type { AirportIndexRow } from "./data";
 
 export type Category = "VFR" | "MVFR" | "IFR" | "LIFR" | "Unknown";
 
@@ -17,26 +26,77 @@ export interface Station {
   fetchedAtMs: number;     // 0 if never
 }
 
-// Bay Area primary field set for the weather-dot view. Matches
-// src/services/weather.cpp (minus KAPC/KWVI which were dropped there).
-export const STATIONS: Station[] = [
-  { icao: "KSFO", lat: 37.6188, lon: -122.3750, category: "Unknown", ceilingFtAgl: Infinity, visibilitySm: 0, fetchedAtMs: 0 },
-  { icao: "KOAK", lat: 37.7213, lon: -122.2214, category: "Unknown", ceilingFtAgl: Infinity, visibilitySm: 0, fetchedAtMs: 0 },
-  { icao: "KSJC", lat: 37.3639, lon: -121.9289, category: "Unknown", ceilingFtAgl: Infinity, visibilitySm: 0, fetchedAtMs: 0 },
-  { icao: "KHWD", lat: 37.6591, lon: -122.1214, category: "Unknown", ceilingFtAgl: Infinity, visibilitySm: 0, fetchedAtMs: 0 },
-  { icao: "KLVK", lat: 37.6934, lon: -121.8203, category: "Unknown", ceilingFtAgl: Infinity, visibilitySm: 0, fetchedAtMs: 0 },
-  { icao: "KCCR", lat: 37.9897, lon: -122.0567, category: "Unknown", ceilingFtAgl: Infinity, visibilitySm: 0, fetchedAtMs: 0 },
-  { icao: "KHAF", lat: 37.5136, lon: -122.5006, category: "Unknown", ceilingFtAgl: Infinity, visibilitySm: 0, fetchedAtMs: 0 },
-  { icao: "KSQL", lat: 37.5119, lon: -122.2495, category: "Unknown", ceilingFtAgl: Infinity, visibilitySm: 0, fetchedAtMs: 0 },
-  { icao: "KPAO", lat: 37.4611, lon: -122.1150, category: "Unknown", ceilingFtAgl: Infinity, visibilitySm: 0, fetchedAtMs: 0 },
-  { icao: "KRHV", lat: 37.3329, lon: -121.8195, category: "Unknown", ceilingFtAgl: Infinity, visibilitySm: 0, fetchedAtMs: 0 },
-  { icao: "KNUQ", lat: 37.4161, lon: -122.0492, category: "Unknown", ceilingFtAgl: Infinity, visibilitySm: 0, fetchedAtMs: 0 },
-];
+// Fixed cap on how many stations we render / fetch. Kept modest so we
+// don't blast NWS with 100+ parallel HTTP calls in a dense metro; 32
+// mirrors the firmware weather.cpp cap for visual parity.
+const MAX_STATIONS = 32;
+
+// Exported as an array so weatherView.ts's `import { STATIONS }`
+// stays a live reference. Mutated in place by rebuildStations().
+export const STATIONS: Station[] = [];
 
 let lastFleetUpdateMs = 0;
 
 export function lastUpdateMs(): number {
   return lastFleetUpdateMs;
+}
+
+/** Reset the fresh-data cache so refreshIfStale() will refetch. Call
+ *  after rebuildStations() or when the user forces a manual refresh. */
+export function invalidate(): void {
+  lastFleetUpdateMs = 0;
+}
+
+// Great-circle-ish distance in nautical miles. 1° latitude ≈ 60 nm;
+// longitude scales by cos(lat). Good enough at radar zoom.
+const NM_PER_DEG = 60;
+function distanceNm(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const cosLat = Math.cos((lat1 * Math.PI) / 180);
+  const dLatNm = (lat2 - lat1) * NM_PER_DEG;
+  const dLonNm = (lon2 - lon1) * NM_PER_DEG * cosLat;
+  return Math.hypot(dLatNm, dLonNm);
+}
+
+/** Rebuild STATIONS to the (up to MAX_STATIONS) closest airports to
+ *  (centerLat, centerLon) that fall within radiusNm × 1.1 (small pad so
+ *  edge stations still render). Preserves already-fetched category data
+ *  for stations that survive the rebuild. */
+export function rebuildStations(
+  airportIndex: AirportIndexRow[],
+  centerLat: number,
+  centerLon: number,
+  radiusNm: number,
+): void {
+  const cutoff = radiusNm * 1.1;
+  const scratch: { icao: string; lat: number; lon: number; dist: number }[] = [];
+  for (const [icao, , , , lat, lon] of airportIndex) {
+    // NWS observations endpoint only accepts ICAO-formatted ids
+    // (4 letters, first char is region). The baked index is already
+    // ICAO-keyed but skip anything malformed just in case.
+    if (!icao || icao.length < 3) continue;
+    const d = distanceNm(centerLat, centerLon, lat, lon);
+    if (d > cutoff) continue;
+    scratch.push({ icao, lat, lon, dist: d });
+  }
+  scratch.sort((a, b) => a.dist - b.dist);
+  const pick = scratch.slice(0, MAX_STATIONS);
+
+  // Preserve prior fetched data for stations that survive the rebuild —
+  // avoids a category-flash back to Unknown while the next fetch lands.
+  const prior = new Map(STATIONS.map((s) => [s.icao, s] as const));
+  STATIONS.length = 0;
+  for (const p of pick) {
+    const old = prior.get(p.icao);
+    STATIONS.push(old ?? {
+      icao: p.icao,
+      lat: p.lat,
+      lon: p.lon,
+      category: "Unknown",
+      ceilingFtAgl: Infinity,
+      visibilitySm: 0,
+      fetchedAtMs: 0,
+    });
+  }
 }
 
 // FAA rules — worst-of ceiling and visibility wins.

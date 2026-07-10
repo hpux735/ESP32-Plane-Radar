@@ -14,7 +14,7 @@ import { makeTapDiscriminator, type Tap } from "./input";
 import { mountSettings } from "./settings";
 import { drawWeatherView } from "./weatherView";
 import { drawCockpitView } from "./cockpitView";
-import { refreshIfStale } from "./weather";
+import { refreshIfStale, rebuildStations, invalidate as invalidateMetar } from "./weather";
 import { refreshIfStale as refreshOutdoorTemp } from "./outdoorTemp";
 import { fetchAircraft } from "./aircraft";
 import { RANGE_PRESETS } from "./theme";
@@ -103,6 +103,13 @@ function startNonRadarTicker(): void {
 
 function enterWeather(): void {
   setView("weather");
+  // Make sure the station list matches the current METAR center before
+  // firing the fetch. rebuildStations() is idempotent; if the config
+  // hasn't moved since last entry, this is a no-op.
+  if (mapData) {
+    rebuildStations(mapData.airportIndex, state.metar.centerLat,
+                    state.metar.centerLon, state.metar.radiusNm);
+  }
   refreshIfStale().then(() => requestFrame()).catch(() => { /* no-op */ });
   startNonRadarTicker();
 }
@@ -121,6 +128,25 @@ subscribe(() => {
     nonRadarTicker = null;
   }
   requestFrame();
+});
+
+// If the user edits the METAR center/radius in settings, rebuild the
+// station pool against the new box and clear the cache so the next
+// weather-view entry refetches. Cheap enough to run on every state
+// change (rebuild is O(airport_index size) ≈ 800 ops).
+let lastMetarKey = "";
+subscribe(() => {
+  if (!mapData) return;
+  const key = `${state.metar.centerLat}:${state.metar.centerLon}:${state.metar.radiusNm}`;
+  if (key === lastMetarKey) return;
+  lastMetarKey = key;
+  rebuildStations(mapData.airportIndex, state.metar.centerLat,
+                  state.metar.centerLon, state.metar.radiusNm);
+  invalidateMetar();
+  // If we're currently on the weather view, kick a fresh fetch now.
+  if (state.view === "weather") {
+    refreshIfStale().then(() => requestFrame()).catch(() => { /* no-op */ });
+  }
 });
 
 // Aircraft fetch loop. Fires immediately on center/range change plus

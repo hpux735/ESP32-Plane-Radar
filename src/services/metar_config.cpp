@@ -7,6 +7,7 @@
 #include <cstdlib>
 
 #include "config.h"
+#include "services/weather.h"
 
 namespace services::metar_config {
 namespace {
@@ -72,6 +73,7 @@ void saveFromStrings(const char* lat_str, const char* lon_str,
   prefs.putFloat(kKeyLon, lon);
   prefs.putFloat(kKeyRadius, rad);
   prefs.end();
+  services::weather::invalidate();
   Serial.printf("metar_config: saved center=(%.4f, %.4f) radius=%.1f nm\n",
                 lat, lon, rad);
 }

@@ -4,10 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 
-// METAR-driven weather snapshot for a fixed list of Bay Area airports.
-// Fetched in one bulk call from aviationweather.gov (public, no key).
-// Flight category is computed locally from ceiling + visibility per FAA
-// rules — the API's `fltcat` field is currently empty in responses.
+// METAR-driven weather snapshot for whichever stations aviationweather.gov
+// reports inside the current metar_config bbox. One bulk HTTP GET per
+// refresh (public API, no key). Flight category is computed locally from
+// ceiling + visibility per FAA rules — the API's `fltcat` field is empty.
 
 namespace services::weather {
 
@@ -20,9 +20,9 @@ enum class Category : uint8_t {
 };
 
 struct Station {
-  const char* icao;      // "KSFO"
-  float       lat;       // deg
-  float       lon;       // deg
+  char        icao[8];         // NUL-terminated ("KSFO", "CYYZ", "MMMX")
+  float       lat;             // deg
+  float       lon;             // deg
   Category    category;
   int16_t     wind_dir_deg;    // 0 if calm / variable / unknown
   int16_t     wind_speed_kt;
@@ -30,13 +30,19 @@ struct Station {
   int32_t     ceiling_ft_agl;  // INT32_MAX = no ceiling reported
 };
 
-/** Fixed list of stations we render on the weather-dot view. */
+/** Stations currently populated from the most recent successful fetch.
+ *  Rebuilt on every successful update(); empty until the first fetch. */
 size_t stationCount();
 const Station* stations();
 
-/** Fetch fresh METARs for all stations. Returns true on success. Safe
- *  to call from anywhere in the main loop (blocks on HTTP). */
+/** Fetch METARs inside the current metar_config bbox. Returns true on
+ *  success. Safe to call from anywhere in the main loop (blocks on HTTP). */
 bool update();
+
+/** Force the next refresh() cycle to refetch, e.g. after the user
+ *  changes the METAR center/radius. Also clears the current station
+ *  list so the map doesn't linger on stale foreign stations. */
+void invalidate();
 
 /** millis() of the most recent successful update, or 0 if none yet. */
 unsigned long lastUpdateMs();
