@@ -5,13 +5,10 @@
 #include <cmath>
 #include <cstdlib>
 
-#include "data/focus_airports.h"
-#include "data/large_airports.h"
 #include "data/tile_math.h"
 #include "data/tile_reader.h"
 #include "data/tile_store.h"
 #include "hardware/display_font.h"
-#include "services/focus_points.h"
 #include "services/radar_location.h"
 #include "ui/label_layout.h"
 #include "ui/layer_style.h"
@@ -27,9 +24,6 @@ namespace {
 
 constexpr float kKmPerDeg = 111.0f;
 constexpr size_t kMaxAirportLabels = 32;
-
-bool s_in_range[data::large_airports::kAirportCount];
-bool s_label_pending[data::large_airports::kAirportCount];
 
 bool s_runway_label_ready = false;
 bool s_runway_label_use_vlw = false;
@@ -313,16 +307,6 @@ void drawAirportLabelT(lgfx::LGFXBase& gfx, const AirportT& ap) {
 
 }  // namespace
 
-// Match the current focus airport (if any) against a focus_airports ident.
-// Focus names in services::focus omit the leading K (e.g. "SQL"); focus
-// airport idents include it ("KSQL"). Compare with a 1-char offset.
-bool focusMatches(const char* airport_ident) {
-  const auto& fp = services::focus::current();
-  if (fp.is_home) return false;
-  if (airport_ident == nullptr || airport_ident[0] != 'K') return false;
-  return std::strcmp(airport_ident + 1, fp.name) == 0;
-}
-
 // Adapter shapes so the existing drawRunwayLineT / drawAirportLabelT
 // templates work against tile-parsed data without copying the whole
 // template body.
@@ -403,89 +387,19 @@ void drawLargeAirportRunways(lgfx::LGFXBase& gfx) {
   displayFontEnsureLoaded(gfx);
   const float radius_km = radar::fetchRadiusKm();
 
-  // Tile-backed path takes over when the TileStore has a fetched
-  // tile at the current location. Falls through to the compiled-in
-  // Bay Area airport tables when only the fallback tile is available
-  // (until milestone 2 step 9 wires up the disk/network loader and
-  // removes the baked path).
+  // Look up the tile covering the current location and dispatch to
+  // the tile-backed drawer. If no tile is cached (fallback in flash
+  // has no airport data), the render simply skips — the runway layer
+  // is quiet until a tile arrives. That's the intended offline state.
   uint16_t tx = 0, ty = 0;
   data::tile::tileOfLatLon(data::tile::kRenderZoom,
                             services::location::lat(),
                             services::location::lon(), &tx, &ty);
   const auto tbytes = data::tile::store().get(data::tile::kRenderZoom, tx, ty);
-  if (!tbytes.is_fallback) {
-    drawRunwaysFromTile(gfx, tbytes, radius_km);
-    return;
-  }
-
-  uint16_t label_airports[kMaxAirportLabels];
-  size_t label_count = 0;
-
-  for (size_t i = 0; i < data::large_airports::kAirportCount; ++i) {
-    s_in_range[i] = false;
-    s_label_pending[i] = false;
-  }
-
-  if (!large_on) goto focus_pass;
-  for (size_t i = 0; i < data::large_airports::kRunwayCount; ++i) {
-    const auto& rw = data::large_airports::kRunways[i];
-    const uint16_t ap_idx = rw.airport_idx;
-    if (!s_in_range[ap_idx]) {
-      const auto& ap = data::large_airports::kAirports[ap_idx];
-      float dx_km = 0.0f;
-      float dy_km = 0.0f;
-      float dist_km = 0.0f;
-      offsetKmFromCenter(e7ToDeg(ap.lat_e7), e7ToDeg(ap.lon_e7), &dx_km, &dy_km,
-                         &dist_km);
-      s_in_range[ap_idx] = (dist_km <= radius_km);
-    }
-    if (!s_in_range[ap_idx]) {
-      continue;
-    }
-    if (!drawRunwayLineT(gfx, rw)) {
-      continue;
-    }
-    if (!s_label_pending[ap_idx] && label_count < kMaxAirportLabels) {
-      s_label_pending[ap_idx] = true;
-      label_airports[label_count++] = ap_idx;
-    }
-  }
-
-focus_pass:
-  // Focus-airport pass: render the GA field currently under focus. Its
-  // runways + label are added on top of the large-airport pass. Skipped
-  // entirely when Home or a large-airport (SFO/OAK/SJC) is the focus.
-  int focus_extras_labeled_idx = -1;
-  if (focus_on) {
-    for (size_t i = 0; i < data::focus_airports::kAirportCount; ++i) {
-      if (focusMatches(data::focus_airports::kAirports[i].ident)) {
-        focus_extras_labeled_idx = static_cast<int>(i);
-        break;
-      }
-    }
-  }
-  for (size_t i = 0;
-       focus_extras_labeled_idx >= 0 &&
-       i < data::focus_airports::kRunwayCount;
-       ++i) {
-    const auto& rw = data::focus_airports::kRunways[i];
-    if (rw.airport_idx != focus_extras_labeled_idx) continue;
-    drawRunwayLineT(gfx, rw);
-  }
-
-  if (label_count == 0 && focus_extras_labeled_idx < 0) {
-    return;
-  }
-
-  initRunwayLabelStyle(gfx);
-  applyRunwayLabelStyle(gfx);
-  for (size_t i = 0; i < label_count; ++i) {
-    drawAirportLabelT(gfx, data::large_airports::kAirports[label_airports[i]]);
-  }
-  if (focus_extras_labeled_idx >= 0) {
-    drawAirportLabelT(gfx,
-                      data::focus_airports::kAirports[focus_extras_labeled_idx]);
-  }
+  if (tbytes.is_fallback) return;
+  drawRunwaysFromTile(gfx, tbytes, radius_km);
+  (void)large_on;
+  (void)focus_on;
 }
 
 }  // namespace ui::runway
