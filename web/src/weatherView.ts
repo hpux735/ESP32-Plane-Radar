@@ -13,9 +13,9 @@ import {
   WX_COLORS,
 } from "./theme";
 import { STATIONS, lastUpdateMs, type Category } from "./weather";
-import { selectMap, isInBay, type MapData, type LandData, type LonLat } from "./data";
 import { segmentOnScreen } from "./projection";
 import { state } from "./state";
+import type { Tile } from "./tile";
 
 const KM_PER_NM = 1.852;
 
@@ -211,83 +211,50 @@ function insideDisc(x: number, y: number): boolean {
   return dx * dx + dy * dy <= PROJECTION_PX * PROJECTION_PX;
 }
 
-// Pick Bay-Area high-detail or CONUS coarse layers off the current
-// METAR center, mirroring what renderer.ts does for the radar view.
-// Weather view uses state.metar.center*, not the radar center — the two
-// are edited independently in settings.
-function selectWeatherMap(data: MapData) {
-  return selectMap(data, state.metar.centerLat, state.metar.centerLon);
-}
-
-function drawLandLayer(ctx: CanvasRenderingContext2D, fit: Fit,
-                       land: LandData, fill: string): void {
-  const { vertices, triangles } = land;
-  ctx.fillStyle = fill;
+// Fill every tile land polygon at weather-map zoom. Canvas handles
+// concave rings natively via the evenodd rule — no ear-clip needed
+// (that's the firmware's problem because SPI has no polygon fill).
+function drawTileLand(ctx: CanvasRenderingContext2D, fit: Fit,
+                      tiles: Tile[]): void {
+  ctx.fillStyle = COLORS.land;
   ctx.beginPath();
-  for (const [ia, ib, ic] of triangles) {
-    const [ax, ay] = project(fit, vertices[ia][1], vertices[ia][0]);
-    const [bx, by] = project(fit, vertices[ib][1], vertices[ib][0]);
-    const [cx, cy] = project(fit, vertices[ic][1], vertices[ic][0]);
-    const minX = Math.min(ax, bx, cx);
-    const maxX = Math.max(ax, bx, cx);
-    const minY = Math.min(ay, by, cy);
-    const maxY = Math.max(ay, by, cy);
-    if (maxX < 0 || minX >= SIZE || maxY < 0 || minY >= SIZE) continue;
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(bx, by);
-    ctx.lineTo(cx, cy);
-    ctx.closePath();
+  for (const tile of tiles) {
+    for (const ring of tile.land) {
+      if (ring.length < 3) continue;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      const pts: [number, number][] = new Array(ring.length);
+      for (let i = 0; i < ring.length; i++) {
+        const [lon, lat] = ring[i];
+        const [x, y] = project(fit, lat, lon);
+        pts[i] = [x, y];
+        if (x < minX) minX = x; if (x > maxX) maxX = x;
+        if (y < minY) minY = y; if (y > maxY) maxY = y;
+      }
+      if (maxX < 0 || minX >= SIZE || maxY < 0 || minY >= SIZE) continue;
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.closePath();
+    }
   }
   ctx.fill("evenodd");
 }
 
-// OSM water polygons (Hudson, Chesapeake, Long Island Sound, SF tidal
-// tributaries, etc.) painted as background-color cutouts over the land
-// tint. Same treatment renderer.ts does at radar zoom — usually only a
-// handful of polygons are on-screen even in dense areas.
-function drawWaterCutouts(ctx: CanvasRenderingContext2D, fit: Fit,
-                          rings: LonLat[][]): void {
-  ctx.fillStyle = COLORS.background;
-  ctx.beginPath();
-  for (const ring of rings) {
-    let minLat = ring[0][1], maxLat = ring[0][1];
-    let minLon = ring[0][0], maxLon = ring[0][0];
-    for (const [lon, lat] of ring) {
-      if (lat < minLat) minLat = lat;
-      if (lat > maxLat) maxLat = lat;
-      if (lon < minLon) minLon = lon;
-      if (lon > maxLon) maxLon = lon;
-    }
-    const [x1, y1] = project(fit, minLat, minLon);
-    const [x2, y2] = project(fit, maxLat, maxLon);
-    const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
-    const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
-    if (maxX < 0 || minX >= SIZE || maxY < 0 || minY >= SIZE) continue;
-    let first = true;
-    for (const [lon, lat] of ring) {
-      const [x, y] = project(fit, lat, lon);
-      if (first) { ctx.moveTo(x, y); first = false; }
-      else ctx.lineTo(x, y);
-    }
-    ctx.closePath();
-  }
-  ctx.fill("evenodd");
-}
-
-function drawCoastLines(ctx: CanvasRenderingContext2D, fit: Fit,
-                        lines: LonLat[][]): void {
+function drawTileCoast(ctx: CanvasRenderingContext2D, fit: Fit,
+                       tiles: Tile[]): void {
   ctx.strokeStyle = COLORS.coastline;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  for (const line of lines) {
-    let prev: [number, number] | null = null;
-    for (const [lon, lat] of line) {
-      const p = project(fit, lat, lon);
-      if (prev && segmentOnScreen(prev[0], prev[1], p[0], p[1])) {
-        ctx.moveTo(prev[0], prev[1]);
-        ctx.lineTo(p[0], p[1]);
+  for (const tile of tiles) {
+    for (const line of tile.coast) {
+      let prev: [number, number] | null = null;
+      for (const [lon, lat] of line) {
+        const p = project(fit, lat, lon);
+        if (prev && segmentOnScreen(prev[0], prev[1], p[0], p[1])) {
+          ctx.moveTo(prev[0], prev[1]);
+          ctx.lineTo(p[0], p[1]);
+        }
+        prev = p;
       }
-      prev = p;
     }
   }
   ctx.stroke();
@@ -356,7 +323,7 @@ function drawBezelMask(ctx: CanvasRenderingContext2D): void {
 
 export function drawWeatherView(
   ctx: CanvasRenderingContext2D,
-  data: MapData,
+  tiles: Tile[],
 ): void {
   const fit = computeFit();
   // Set label font once — projectStations measures glyphs with it and
@@ -368,18 +335,8 @@ export function drawWeatherView(
   const places = placeLabels(dots, halfW);
   ctx.fillStyle = COLORS.background;
   ctx.fillRect(0, 0, SIZE, SIZE);
-  const map = selectWeatherMap(data);
-  const bay = isInBay(state.metar.centerLat, state.metar.centerLon);
-  drawLandLayer(ctx, fit, map.land, COLORS.land);
-  // Outside the Bay Area, punch water bodies back to background so
-  // Great Lakes cities and Atlantic-seaboard airports (LGA, JFK, LGA
-  // Sound) don't sit on a solid land wash.
-  if (!bay) {
-    drawLandLayer(ctx, fit, data.lakesConus, COLORS.background);
-    drawWaterCutouts(ctx, fit, data.waterConus);
-  }
-  drawCoastLines(ctx, fit, map.coastline);
-  drawCoastLines(ctx, fit, map.rivers);
+  drawTileLand(ctx, fit, tiles);
+  drawTileCoast(ctx, fit, tiles);
   drawFreshness(ctx);
   ctx.font = LABEL_FONT;   // drawFreshness stomps the font
   ctx.textAlign = "center";

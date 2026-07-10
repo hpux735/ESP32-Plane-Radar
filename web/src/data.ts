@@ -1,122 +1,23 @@
-// Fetch + cache the baked JSON payloads emitted by
-// scripts/build_web_data.py.
-
-export type LonLat = [number, number];
-
-export interface LandData {
-  vertices: LonLat[];
-  triangles: [number, number, number][];
-}
-
-export interface Runway {
-  le: string;
-  he: string;
-  lat1: number; lon1: number;
-  lat2: number; lon2: number;
-}
-
-export interface Airport {
-  name: string;
-  city: string;
-  lat: number;
-  lon: number;
-  tier: number;         // 3=large, 2=medium, 1=small
-  runways: Runway[];
-}
+// The typeahead airport index shipped with the website. Everything else
+// the renderer needs (coastlines, land, airports with runways) comes
+// from tile fetches — see web/src/tile.ts + web/src/tileFetch.ts.
 
 // Compact typeahead index: [icao, iata, city, name, lat, lon]
 export type AirportIndexRow = [string, string, string, string, number, number];
 
-export interface MapData {
-  // High-detail Bay Area layers (200 km around home) — richer coastline
-  // + minor islands. Used when the current center falls inside BAY_BBOX;
-  // otherwise the CONUS coarse layers take over.
-  coastline: LonLat[][];
-  land: LandData;
-  rivers: LonLat[][];
-  // CONUS-wide base layers (10 m Natural Earth, simplified harder) so
-  // ANY US airport the user picks in the typeahead gets a legible map.
-  // Airports table covers every US airport with scheduled service.
-  coastlineConus: LonLat[][];
-  landConus: LandData;
-  lakesConus: LandData;
-  // OSM ocean/tidal water polygons: each entry is a closed ring of
-  // (lon, lat) points. Rendered as WATER-color cutouts over the land
-  // tint so the Hudson, Chesapeake, Long Island Sound, SF Bay
-  // tributaries etc. read as water even though the coastline
-  // linestring dataset doesn't mark them.
-  waterConus: LonLat[][];
-  riversConus: LonLat[][];
-  airports: Record<string, Airport>;
+export interface IndexData {
   airportIndex: AirportIndexRow[];
 }
 
-/** Rectangle inside which the high-detail Bay Area layers are valid. */
-export const BAY_BBOX = {
-  minLat: 35.96, maxLat: 39.56,
-  minLon: -124.69, maxLon: -120.13,
-};
-
-export function isInBay(lat: number, lon: number): boolean {
-  return lat >= BAY_BBOX.minLat && lat <= BAY_BBOX.maxLat &&
-         lon >= BAY_BBOX.minLon && lon <= BAY_BBOX.maxLon;
-}
-
-/** Pick the appropriate coastline/land/rivers triple for the current
- *  center. High-detail Bay Area set inside BAY_BBOX, else the coarser
- *  CONUS base (10 m Natural Earth simplified for the whole US). */
-export function selectMap(data: MapData, lat: number, lon: number): {
-  coastline: LonLat[][];
-  land: LandData;
-  rivers: LonLat[][];
-} {
-  if (isInBay(lat, lon)) {
-    return {
-      coastline: data.coastline, land: data.land,
-      rivers: data.rivers,
-    };
-  }
-  return {
-    coastline: data.coastlineConus, land: data.landConus,
-    rivers: data.riversConus,
-  };
-}
-
-// Naive cache: fetch once per URL. Replace with a per-region cache when
-// dynamic CONUS lands.
-const cache = new Map<string, Promise<unknown>>();
-
 async function fetchJSON<T>(url: string): Promise<T> {
-  const existing = cache.get(url);
-  if (existing) return existing as Promise<T>;
-  const p = fetch(url).then(async (r) => {
-    if (!r.ok) throw new Error(`fetch ${url}: HTTP ${r.status}`);
-    return r.json() as Promise<T>;
-  });
-  cache.set(url, p);
-  return p;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`fetch ${url}: HTTP ${r.status}`);
+  return r.json() as Promise<T>;
 }
 
-export async function loadMapData(basePath = "data"): Promise<MapData> {
-  const [
-    coastline, land, rivers,
-    coastlineConus, landConus, lakesConus, waterConus, riversConus,
-    airports, airportIndex,
-  ] = await Promise.all([
-    fetchJSON<LonLat[][]>(`${basePath}/coastline.json`),
-    fetchJSON<LandData>(`${basePath}/land.json`),
-    fetchJSON<LonLat[][]>(`${basePath}/rivers.json`),
-    fetchJSON<LonLat[][]>(`${basePath}/coastline_conus.json`),
-    fetchJSON<LandData>(`${basePath}/land_conus.json`),
-    fetchJSON<LandData>(`${basePath}/lakes_conus.json`),
-    fetchJSON<LonLat[][]>(`${basePath}/water_conus.json`),
-    fetchJSON<LonLat[][]>(`${basePath}/rivers_conus.json`),
-    fetchJSON<Record<string, Airport>>(`${basePath}/airports.json`),
-    fetchJSON<AirportIndexRow[]>(`${basePath}/airport_index.json`),
-  ]);
-  return {
-    coastline, land, rivers,
-    coastlineConus, landConus, lakesConus, waterConus, riversConus,
-    airports, airportIndex,
-  };
+export async function loadIndexData(basePath = "data"): Promise<IndexData> {
+  const airportIndex = await fetchJSON<AirportIndexRow[]>(
+    `${basePath}/airport_index.json`,
+  );
+  return { airportIndex };
 }

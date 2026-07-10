@@ -1,7 +1,7 @@
 // Plane Radar — web preview entry point.
 
 import "./style.css";
-import { loadMapData, type MapData } from "./data";
+import { loadIndexData, type IndexData } from "./data";
 import { renderFrame } from "./renderer";
 import {
   state,
@@ -18,8 +18,18 @@ import { refreshIfStale, rebuildStations, invalidate as invalidateMetar } from "
 import { refreshIfStale as refreshOutdoorTemp } from "./outdoorTemp";
 import { fetchAircraft } from "./aircraft";
 import { RANGE_PRESETS } from "./theme";
+import { loadTilesForView } from "./tileFetch";
+import type { Tile } from "./tile";
 
-let mapData: MapData | null = null;
+const KM_PER_NM = 1.852;
+
+let indexData: IndexData | null = null;
+// Currently-loaded tile set for whichever view is up. Reassigned when
+// the center of the active view crosses into a different tile family;
+// individual tile fetches are memoized inside tileFetch so pans across
+// already-seen tiles never hit the network twice.
+let tiles: Tile[] = [];
+let tilesKey = "";
 // While in weather or cockpit mode, we repaint once/second — the weather
 // view's "n min ago" freshness label ticks up and the cockpit view's
 // second-sweep animates. Cleared when returning to radar.
@@ -62,19 +72,64 @@ function requestFrame(): void {
     const buf = getOffscreen();
     const bctx = buf.getContext("2d");
     if (!bctx) return;
-    if (!mapData) {
+    if (!indexData) {
       drawLoadingState(bctx, "loading map…");
     } else if (state.view === "weather") {
-      drawWeatherView(bctx, mapData);
+      drawWeatherView(bctx, tiles);
     } else if (state.view === "cockpit") {
       drawCockpitView(bctx);
     } else {
-      renderFrame(bctx, mapData);
+      renderFrame(bctx, tiles);
     }
     // Single blit — the visible canvas never shows a partial frame.
     visible.clearRect(0, 0, 240, 240);
     visible.drawImage(buf, 0, 0);
   });
+}
+
+// The current view's (lat, lon, radius) — determines which tiles we need.
+function currentViewGeometry(): { lat: number; lon: number; radiusKm: number } {
+  if (state.view === "weather") {
+    return {
+      lat: state.metar.centerLat,
+      lon: state.metar.centerLon,
+      radiusKm: state.metar.radiusNm * KM_PER_NM,
+    };
+  }
+  // Radar view: fetch the outer-ring radius with a 10% safety margin so
+  // features near the edge don't pop in a beat late when a pan crosses
+  // into a fresh tile.
+  return {
+    lat: state.centerLat,
+    lon: state.centerLon,
+    radiusKm: RANGE_PRESETS[state.rangeIdx].outerKm * 1.1,
+  };
+}
+
+// Refetch tiles when the active view's center/radius has moved into a
+// combination we haven't loaded yet. Tile fetches are memoized inside
+// tileFetch, so this is only a network round-trip when the tile set
+// actually changes.
+let tilesFetchInFlight: Promise<void> | null = null;
+async function ensureTiles(): Promise<void> {
+  const g = currentViewGeometry();
+  // Cheap change detector: same key → same tile list → nothing to do.
+  const key = `${state.view}:${g.lat.toFixed(3)}:${g.lon.toFixed(3)}:${g.radiusKm.toFixed(1)}`;
+  if (key === tilesKey && tiles.length > 0) return;
+  if (tilesFetchInFlight) return tilesFetchInFlight;
+  tilesFetchInFlight = (async () => {
+    try {
+      const next = await loadTilesForView(g.lat, g.lon, g.radiusKm);
+      tiles = next;
+      tilesKey = key;
+      requestFrame();
+    } catch (err) {
+      console.error("tile fetch failed", err);
+    } finally {
+      tilesFetchInFlight = null;
+    }
+  })();
+  return tilesFetchInFlight;
 }
 
 // Central gesture handler — one place so canvas taps, hint buttons, and
@@ -103,13 +158,11 @@ function startNonRadarTicker(): void {
 
 function enterWeather(): void {
   setView("weather");
-  // Make sure the station list matches the current METAR center before
-  // firing the fetch. rebuildStations() is idempotent; if the config
-  // hasn't moved since last entry, this is a no-op.
-  if (mapData) {
-    rebuildStations(mapData.airportIndex, state.metar.centerLat,
+  if (indexData) {
+    rebuildStations(indexData.airportIndex, state.metar.centerLat,
                     state.metar.centerLon, state.metar.radiusNm);
   }
+  void ensureTiles();
   refreshIfStale().then(() => requestFrame()).catch(() => { /* no-op */ });
   startNonRadarTicker();
 }
@@ -127,6 +180,7 @@ subscribe(() => {
     clearInterval(nonRadarTicker);
     nonRadarTicker = null;
   }
+  void ensureTiles();
   requestFrame();
 });
 
@@ -136,11 +190,11 @@ subscribe(() => {
 // change (rebuild is O(airport_index size) ≈ 800 ops).
 let lastMetarKey = "";
 subscribe(() => {
-  if (!mapData) return;
+  if (!indexData) return;
   const key = `${state.metar.centerLat}:${state.metar.centerLon}:${state.metar.radiusNm}`;
   if (key === lastMetarKey) return;
   lastMetarKey = key;
-  rebuildStations(mapData.airportIndex, state.metar.centerLat,
+  rebuildStations(indexData.airportIndex, state.metar.centerLat,
                   state.metar.centerLon, state.metar.radiusNm);
   invalidateMetar();
   // If we're currently on the weather view, kick a fresh fetch now.
@@ -208,7 +262,7 @@ async function init(): Promise<void> {
   mountKeyboardShortcuts();
 
   try {
-    mapData = await loadMapData("data");
+    indexData = await loadIndexData("data");
   } catch (err) {
     console.error(err);
     const canvas2 = document.getElementById("radar") as HTMLCanvasElement | null;
@@ -217,7 +271,8 @@ async function init(): Promise<void> {
     return;
   }
 
-  mountSettings(mapData.airportIndex);
+  mountSettings(indexData.airportIndex);
+  await ensureTiles();
   requestFrame();
 
   // URL hooks — kept for direct-link testing / shareable views.

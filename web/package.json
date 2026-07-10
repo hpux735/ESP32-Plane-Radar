@@ -13,6 +13,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.0.0",
+    "@types/node": "^26.1.1",
     "typescript": "~5.5.4",
     "vite": "^5.4.10",
     "vitest": "^4.1.10",
