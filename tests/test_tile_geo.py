@@ -113,6 +113,51 @@ def test_dp_simplify_preserves_endpoints():
     assert result[-1] == pts[-1]
 
 
+def test_sutherland_hodgman_polygon_fully_inside_unchanged():
+    bbox = (0.0, 10.0, 0.0, 10.0)
+    poly = [(2.0, 2.0), (8.0, 2.0), (8.0, 8.0), (2.0, 8.0)]
+    result = tg.sutherland_hodgman_clip(poly, bbox)
+    assert result == poly
+
+
+def test_sutherland_hodgman_polygon_fully_outside_returns_empty():
+    bbox = (0.0, 10.0, 0.0, 10.0)
+    poly = [(20.0, 20.0), (30.0, 20.0), (30.0, 30.0), (20.0, 30.0)]
+    assert tg.sutherland_hodgman_clip(poly, bbox) == []
+
+
+def test_sutherland_hodgman_polygon_straddling_west_edge_gets_clipped():
+    """Polygon crosses lon=0; result must sit entirely within [0, 10]
+    on the lon axis."""
+    bbox = (0.0, 10.0, 0.0, 10.0)
+    poly = [(-5.0, 2.0), (5.0, 2.0), (5.0, 8.0), (-5.0, 8.0)]
+    result = tg.sutherland_hodgman_clip(poly, bbox)
+    assert len(result) >= 3
+    assert all(bbox[2] <= lon <= bbox[3] for lon, _ in result)
+
+
+def test_sutherland_hodgman_drops_closing_vertex_from_input():
+    """A ring that ends with its opening vertex should not double-count
+    that vertex in the output."""
+    bbox = (0.0, 10.0, 0.0, 10.0)
+    poly = [(2.0, 2.0), (8.0, 2.0), (8.0, 8.0), (2.0, 8.0), (2.0, 2.0)]
+    result = tg.sutherland_hodgman_clip(poly, bbox)
+    assert len(result) == 4  # not 5
+    assert result[0] != result[-1]  # not closed
+
+
+def test_sutherland_hodgman_polygon_entirely_containing_bbox_returns_bbox():
+    """A polygon that engulfs the bbox should be clipped down to a
+    rectangle matching the bbox corners."""
+    bbox = (0.0, 10.0, 0.0, 10.0)
+    poly = [(-20.0, -20.0), (20.0, -20.0), (20.0, 20.0), (-20.0, 20.0)]
+    result = tg.sutherland_hodgman_clip(poly, bbox)
+    lons = {lon for lon, _ in result}
+    lats = {lat for _, lat in result}
+    assert min(lons) == 0.0 and max(lons) == 10.0
+    assert min(lats) == 0.0 and max(lats) == 10.0
+
+
 def test_perp_dist_point_on_line_is_zero():
     assert tg._perp_dist((5.0, 0.0), (0.0, 0.0), (10.0, 0.0)) == 0.0
 

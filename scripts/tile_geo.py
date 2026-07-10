@@ -52,6 +52,96 @@ def clip_polyline_to_bbox(
     return out
 
 
+def sutherland_hodgman_clip(
+    polygon: list[Point], bbox: tuple[float, float, float, float]
+) -> list[Point]:
+    """Clip a polygon against an axis-aligned bbox. Returns the clipped
+    polygon (open — first point NOT repeated at the end), or [] if the
+    result is degenerate (<3 vertices).
+
+    Standard Sutherland-Hodgman: iterate the four bbox edges, at each
+    step keep vertices on the inside of that edge, plus intersection
+    points for each edge crossing. bbox is (min_lat, max_lat, min_lon,
+    max_lon) — matching clip_polyline_to_bbox for consistency.
+
+    Points are (lon, lat) as everywhere else in this module.
+    """
+    min_lat, max_lat, min_lon, max_lon = bbox
+    if not polygon:
+        return []
+
+    # Drop the closing vertex if the caller included it — we'll operate
+    # on an open sequence and rely on wrap-around in the edge loop.
+    poly = list(polygon)
+    if len(poly) >= 2 and poly[0] == poly[-1]:
+        poly = poly[:-1]
+
+    def _clip_against(
+        pts: list[Point],
+        inside: "callable",
+        intersect: "callable",
+    ) -> list[Point]:
+        if not pts:
+            return []
+        out: list[Point] = []
+        n = len(pts)
+        for i in range(n):
+            curr = pts[i]
+            prev = pts[i - 1]  # -1 → last (wrap)
+            curr_in = inside(curr)
+            prev_in = inside(prev)
+            if curr_in:
+                if not prev_in:
+                    out.append(intersect(prev, curr))
+                out.append(curr)
+            elif prev_in:
+                out.append(intersect(prev, curr))
+        return out
+
+    def _lerp(a: Point, b: Point, t: float) -> Point:
+        return (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)
+
+    def _at_lon(a: Point, b: Point, lon: float) -> Point:
+        # Solve for t such that a.lon + t*(b.lon - a.lon) == lon.
+        dx = b[0] - a[0]
+        t = 0.0 if dx == 0 else (lon - a[0]) / dx
+        return _lerp(a, b, t)
+
+    def _at_lat(a: Point, b: Point, lat: float) -> Point:
+        dy = b[1] - a[1]
+        t = 0.0 if dy == 0 else (lat - a[1]) / dy
+        return _lerp(a, b, t)
+
+    # West edge: keep lon >= min_lon
+    poly = _clip_against(
+        poly,
+        inside=lambda p: p[0] >= min_lon,
+        intersect=lambda a, b: _at_lon(a, b, min_lon),
+    )
+    # East edge: keep lon <= max_lon
+    poly = _clip_against(
+        poly,
+        inside=lambda p: p[0] <= max_lon,
+        intersect=lambda a, b: _at_lon(a, b, max_lon),
+    )
+    # South edge: keep lat >= min_lat
+    poly = _clip_against(
+        poly,
+        inside=lambda p: p[1] >= min_lat,
+        intersect=lambda a, b: _at_lat(a, b, min_lat),
+    )
+    # North edge: keep lat <= max_lat
+    poly = _clip_against(
+        poly,
+        inside=lambda p: p[1] <= max_lat,
+        intersect=lambda a, b: _at_lat(a, b, max_lat),
+    )
+
+    if len(poly) < 3:
+        return []
+    return poly
+
+
 def _perp_dist(p: Point, a: Point, b: Point) -> float:
     ax, ay = a
     bx, by = b
