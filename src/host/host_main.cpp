@@ -31,6 +31,11 @@
 #include "ui/radar_range.h"
 #include "ui/weather_map.h"
 
+// Loads the pre-baked SF-area tile into TileStore at boot — emulator
+// stand-in for the HTTPS fetch that milestone 2 step 11 wires up on
+// real hardware. Defined in src/host/host_stubs.cpp.
+namespace host { void loadBootstrapTiles(); }
+
 namespace {
 
 constexpr uint8_t kShotFakeGpio = 10;
@@ -156,6 +161,7 @@ void setup() {
   }
   displayInit();
   services::location::init();
+  host::loadBootstrapTiles();  // must precede first radar draw
   services::metar_config::init();
   ui::radar::rangeInit();
   services::focus::init();
