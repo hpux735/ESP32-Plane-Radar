@@ -14,6 +14,8 @@
 #define NATIVE_STUBS_DEFINE
 #include "../common/native_stubs.h"
 
+using services::weather::geo::bearingDeg;
+using services::weather::geo::compass8;
 using services::weather::geo::distanceNm;
 using services::weather::geo::makeBbox;
 
@@ -89,6 +91,56 @@ void test_bbox_longitude_widens_at_high_latitude(void) {
   TEST_ASSERT_TRUE(half_lon < 2.1f * half_lat);
 }
 
+// ---- bearingDeg + compass8 -----------------------------------------
+
+void test_bearing_north(void) {
+  const float b = bearingDeg(37.75f, -122.45f, 38.75f, -122.45f);
+  TEST_ASSERT_FLOAT_WITHIN(0.5f, 0.0f, b);
+}
+
+void test_bearing_east(void) {
+  const float b = bearingDeg(37.75f, -122.45f, 37.75f, -121.45f);
+  TEST_ASSERT_FLOAT_WITHIN(1.0f, 90.0f, b);
+}
+
+void test_bearing_south(void) {
+  const float b = bearingDeg(37.75f, -122.45f, 36.75f, -122.45f);
+  TEST_ASSERT_FLOAT_WITHIN(0.5f, 180.0f, b);
+}
+
+void test_bearing_west(void) {
+  const float b = bearingDeg(37.75f, -122.45f, 37.75f, -123.45f);
+  TEST_ASSERT_FLOAT_WITHIN(1.0f, 270.0f, b);
+}
+
+void test_bearing_range_0_to_360(void) {
+  const float b = bearingDeg(37.75f, -122.45f, 40.7128f, -74.006f);
+  TEST_ASSERT_TRUE(b >= 0.0f);
+  TEST_ASSERT_TRUE(b < 360.0f);
+}
+
+void test_compass8_cardinals(void) {
+  TEST_ASSERT_EQUAL_STRING("N",  compass8(0.0f));
+  TEST_ASSERT_EQUAL_STRING("NE", compass8(45.0f));
+  TEST_ASSERT_EQUAL_STRING("E",  compass8(90.0f));
+  TEST_ASSERT_EQUAL_STRING("SE", compass8(135.0f));
+  TEST_ASSERT_EQUAL_STRING("S",  compass8(180.0f));
+  TEST_ASSERT_EQUAL_STRING("SW", compass8(225.0f));
+  TEST_ASSERT_EQUAL_STRING("W",  compass8(270.0f));
+  TEST_ASSERT_EQUAL_STRING("NW", compass8(315.0f));
+}
+
+void test_compass8_rounds_to_nearest_bin(void) {
+  TEST_ASSERT_EQUAL_STRING("N",  compass8(22.0f));   // rounds to 0
+  TEST_ASSERT_EQUAL_STRING("NE", compass8(23.0f));   // rounds to 45
+  TEST_ASSERT_EQUAL_STRING("N",  compass8(359.0f));  // wraps to 360→0
+}
+
+void test_compass8_normalizes_negative_and_wraparound(void) {
+  TEST_ASSERT_EQUAL_STRING("NW", compass8(-45.0f));
+  TEST_ASSERT_EQUAL_STRING("E",  compass8(720.0f + 90.0f));
+}
+
 int main(int /*argc*/, char** /*argv*/) {
   UNITY_BEGIN();
   RUN_TEST(test_distance_zero_for_same_point);
@@ -99,5 +151,13 @@ int main(int /*argc*/, char** /*argv*/) {
   RUN_TEST(test_bbox_grows_with_radius);
   RUN_TEST(test_bbox_inflates_radius_by_10_percent);
   RUN_TEST(test_bbox_longitude_widens_at_high_latitude);
+  RUN_TEST(test_bearing_north);
+  RUN_TEST(test_bearing_east);
+  RUN_TEST(test_bearing_south);
+  RUN_TEST(test_bearing_west);
+  RUN_TEST(test_bearing_range_0_to_360);
+  RUN_TEST(test_compass8_cardinals);
+  RUN_TEST(test_compass8_rounds_to_nearest_bin);
+  RUN_TEST(test_compass8_normalizes_negative_and_wraparound);
   return UNITY_END();
 }

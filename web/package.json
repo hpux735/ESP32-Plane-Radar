@@ -25,8 +25,5 @@
   },
   "allowScripts": {
     "esbuild@0.21.5": true
-  },
-  "dependencies": {
-    "tz-lookup": "^6.1.25"
   }
 }

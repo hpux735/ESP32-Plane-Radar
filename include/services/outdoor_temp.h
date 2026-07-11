@@ -18,6 +18,11 @@ struct Reading {
   float baroInHg;      // altimeter setting in inches of mercury (Kollsman)
   bool  valid;         // true after any successful fetch
   unsigned long age_ms;  // millis since last successful fetch
+  // UTC offset (seconds) at the home location for the moment of the
+  // fetch, DST-aware. Set from Open-Meteo's `utc_offset_seconds` field.
+  // Zero when the reading is invalid or the API hasn't populated it —
+  // callers should treat 0 as "unknown, fall back to UTC".
+  long utcOffsetSec;
 };
 
 /** Cheap idempotent — safe to call at boot before WiFi. */

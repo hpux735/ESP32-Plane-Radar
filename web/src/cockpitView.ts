@@ -5,7 +5,6 @@
 // the web preview we use plausible SF Bay Area placeholder values until
 // a real weather fetch is wired up.
 
-import tzlookup from "tz-lookup";
 import { CENTER_X, CENTER_Y, SIZE, PHYSICAL_PANEL_RADIUS } from "./theme";
 import { state } from "./state";
 import { cachedReading, type WxReading } from "./outdoorTemp";
@@ -68,29 +67,17 @@ function drawSecondSweep(ctx: CanvasRenderingContext2D, sec: number): void {
   }
 }
 
-// Return the IANA time zone for the current home location, falling back
-// to the browser's default zone if lookup throws (out-of-range coords).
-function homeTimeZone(): string {
-  try {
-    return tzlookup(state.home.lat, state.home.lon);
-  } catch {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone;
-  }
-}
-
-// HH:MM in the given IANA zone using 24-hour clock. Returns "--:--" on
-// any Intl failure so the display degrades gracefully.
-function formatInZone(now: Date, timeZone: string): string {
-  try {
-    return new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      hour: "2-digit",
-      minute: "2-digit",
-      hourCycle: "h23",
-    }).format(now);
-  } catch {
-    return "--:--";
-  }
+// HH:MM at the home planning point, derived from the UTC offset the
+// Open-Meteo fetch returns for state.home. Matches the firmware path —
+// both platforms compute time the same way from the same source.
+// Falls back to browser UTC formatting when no fetch has completed yet
+// (offset = 0).
+function formatHomeLocal(now: Date): string {
+  const offsetSec = cachedReading().utcOffsetSec;
+  const local = new Date(now.getTime() + offsetSec * 1000);
+  const hh = local.getUTCHours().toString().padStart(2, "0");
+  const mm = local.getUTCMinutes().toString().padStart(2, "0");
+  return `${hh}:${mm}`;
 }
 
 function drawTime(ctx: CanvasRenderingContext2D, hhmm: string): void {
@@ -282,12 +269,13 @@ export function drawCockpitView(ctx: CanvasRenderingContext2D): void {
   drawFreshness(ctx);
   drawWindIndicator(ctx, wx);
 
-  // Local clock in the home planning-point's IANA zone. JS Date is
-  // always synced; no equivalent of the firmware's "waiting for SNTP"
-  // placeholder is needed — the function is kept for future offline
-  // preview parity.
+  // Local clock at the home planning-point, derived from Open-Meteo's
+  // utc_offset_seconds (populated by the outdoor-temp fetch). JS Date
+  // is always synced; no equivalent of the firmware's "waiting for
+  // SNTP" placeholder is needed — the function is kept for future
+  // offline preview parity.
   const now = new Date();
-  const hhmm = formatInZone(now, homeTimeZone());
+  const hhmm = formatHomeLocal(now);
   const sec = now.getSeconds();
   void drawUnsyncedPlaceholder;
 

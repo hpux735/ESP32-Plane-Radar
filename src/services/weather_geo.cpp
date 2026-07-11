@@ -28,4 +28,22 @@ void makeBbox(float center_lat, float center_lon, float radius_nm,
   *lon_max = center_lon + pad_lon;
 }
 
+float bearingDeg(float lat1, float lon1, float lat2, float lon2) {
+  const float phi1 = lat1 * kDegToRad;
+  const float phi2 = lat2 * kDegToRad;
+  const float dlon = (lon2 - lon1) * kDegToRad;
+  const float y = std::sin(dlon) * std::cos(phi2);
+  const float x = std::cos(phi1) * std::sin(phi2) -
+                  std::sin(phi1) * std::cos(phi2) * std::cos(dlon);
+  const float brg = std::atan2(y, x) / kDegToRad;
+  return std::fmod(brg + 360.0f, 360.0f);
+}
+
+const char* compass8(float bearing_deg) {
+  static const char* kDirs[8] = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
+  const float normalized = std::fmod(std::fmod(bearing_deg, 360.0f) + 360.0f, 360.0f);
+  const int idx = static_cast<int>(std::lroundf(normalized / 45.0f)) % 8;
+  return kDirs[idx];
+}
+
 }  // namespace services::weather::geo

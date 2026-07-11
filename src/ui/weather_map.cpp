@@ -431,9 +431,11 @@ void drawFreshness(lgfx::LGFXBase& gfx) {
     std::strncpy(buf, "no data", sizeof(buf) - 1);
     buf[sizeof(buf) - 1] = '\0';
   } else {
-    const unsigned long age_s = (millis() - last) / 1000;
-    if (age_s < 60) std::snprintf(buf, sizeof(buf), "%lus ago", age_s);
-    else            std::snprintf(buf, sizeof(buf), "%lum ago", age_s / 60);
+    // Always minutes (0 for a fresh fetch). Matches the web preview at
+    // web/src/weatherView.ts formatFreshness — the old "Xs ago" branch
+    // caused a sub-minute flicker on both platforms.
+    const unsigned long age_min = (millis() - last) / 60000UL;
+    std::snprintf(buf, sizeof(buf), "%lu min ago", age_min);
   }
   gfx.drawString(buf, radar::kCenterX, 8);
 }

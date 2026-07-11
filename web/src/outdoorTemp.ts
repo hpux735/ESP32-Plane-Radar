@@ -11,6 +11,11 @@ export interface WxReading {
   windDegFrom: number;
   baroInHg: number;
   valid: boolean;
+  // Open-Meteo's `utc_offset_seconds` at the home lat/lon for the moment
+  // of the fetch — DST-aware. Populated when the URL includes
+  // `&timezone=auto`, which buildUrl below now does. Used by the cockpit
+  // view to render home-local HH:MM without a client-side lat→tz table.
+  utcOffsetSec: number;
 }
 
 const HPA_PER_INHG = 33.8639;
@@ -22,6 +27,7 @@ let cache: WxReading = {
   windDegFrom: NaN,
   baroInHg: NaN,
   valid: false,
+  utcOffsetSec: 0,
 };
 let lastFetchMs = 0;
 let inFlight: Promise<void> | null = null;
@@ -37,6 +43,7 @@ function buildUrl(lat: number, lon: number): string {
     current: "temperature_2m,wind_speed_10m,wind_direction_10m,pressure_msl",
     temperature_unit: "fahrenheit",
     wind_speed_unit: "kn",
+    timezone: "auto",
     forecast_days: "1",
   });
   return `https://api.open-meteo.com/v1/forecast?${params.toString()}`;
@@ -53,18 +60,25 @@ async function doFetch(): Promise<void> {
       wind_direction_10m?: unknown;
       pressure_msl?: unknown;
     };
+    utc_offset_seconds?: unknown;
   };
   const cur = doc.current;
   if (cur == null || typeof cur.temperature_2m !== "number") {
     throw new Error("open-meteo: missing temperature_2m");
   }
   const pressureHpa = typeof cur.pressure_msl === "number" ? cur.pressure_msl : NaN;
+  // Preserve the prior offset if the response omits it (older schema);
+  // stale offset beats a snap back to UTC.
+  const nextOffset = typeof doc.utc_offset_seconds === "number"
+    ? doc.utc_offset_seconds
+    : cache.utcOffsetSec;
   cache = {
     tempF: cur.temperature_2m,
     windKts: typeof cur.wind_speed_10m === "number" ? cur.wind_speed_10m : NaN,
     windDegFrom: typeof cur.wind_direction_10m === "number" ? cur.wind_direction_10m : NaN,
     baroInHg: isFinite(pressureHpa) ? pressureHpa / HPA_PER_INHG : NaN,
     valid: true,
+    utcOffsetSec: nextOffset,
   };
   lastFetchMs = Date.now();
 }
@@ -89,6 +103,7 @@ export function invalidate(): void {
     windDegFrom: NaN,
     baroInHg: NaN,
     valid: false,
+    utcOffsetSec: 0,
   };
   lastFetchMs = 0;
 }

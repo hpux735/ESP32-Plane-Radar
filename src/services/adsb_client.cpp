@@ -198,6 +198,13 @@ uint16_t pickSquawk(const JsonObject& plane) {
   return 0;
 }
 
+// Forward declaration inside the anonymous namespace so `populateFromArray`
+// can call fillTagFields (defined below) with the correct internal
+// linkage. A block-scope `void fillTagFields(...)` used to work on the
+// native toolchain but the riscv32-esp-elf linker treated it as external
+// and failed to resolve — this fixes that.
+void fillTagFields(Aircraft* ac, const JsonObject& plane);
+
 size_t populateFromArray(JsonArray ac) {
   if (ac.isNull()) return 0;
   size_t n = 0;
@@ -210,9 +217,6 @@ size_t populateFromArray(JsonArray ac) {
     s_aircraft[n].nose_deg = pickNoseHeading(plane);
     s_aircraft[n].track_deg = pickTrackHeading(plane);
     s_aircraft[n].gs_knots = pickGroundSpeed(plane);
-    // fillTagFields is defined below — forward-declare so it's visible
-    // here.
-    void fillTagFields(Aircraft*, const JsonObject&);
     fillTagFields(&s_aircraft[n], plane);
     ++n;
   }

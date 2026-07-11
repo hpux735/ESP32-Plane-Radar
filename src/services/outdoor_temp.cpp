@@ -35,6 +35,11 @@ bool s_valid = false;
 unsigned long s_last_fetch_ms = 0;
 unsigned long s_last_attempt_ms = 0;
 bool s_ever_attempted = false;
+// UTC offset at the home lat/lon at fetch time. Populated from Open-
+// Meteo's `utc_offset_seconds` — that field is only present when the
+// URL includes `&timezone=auto`, which we now do. Cockpit uses this
+// to render home-local HH:MM without embedding a lat→IANA table.
+long s_utc_offset_sec = 0;
 
 void buildUrl(char* url, size_t len) {
   std::snprintf(url, len,
@@ -42,6 +47,7 @@ void buildUrl(char* url, size_t len) {
                 "&longitude=%.6f"
                 "&current=temperature_2m,wind_speed_10m,wind_direction_10m,pressure_msl"
                 "&temperature_unit=fahrenheit&wind_speed_unit=kn"
+                "&timezone=auto"
                 "&forecast_days=1",
                 services::location::lat(), services::location::lon());
 }
@@ -82,6 +88,14 @@ bool ingestPayload(const char* body, size_t body_len) {
     s_baro_inhg = cur["pressure_msl"].as<float>() / kHpaPerInHg;
   } else {
     s_baro_inhg = NAN;
+  }
+  // Home tz offset — top-level field, DST-aware for the fetch moment.
+  // Keep the previous cached offset if the field is missing (e.g. API
+  // returned an older schema); the stale value is still better than
+  // reverting the clock to UTC mid-display.
+  if (doc["utc_offset_seconds"].is<long>() ||
+      doc["utc_offset_seconds"].is<int>()) {
+    s_utc_offset_sec = doc["utc_offset_seconds"].as<long>();
   }
   s_valid = true;
   s_last_fetch_ms = millis();
@@ -146,6 +160,7 @@ void init() {
   s_last_fetch_ms = 0;
   s_last_attempt_ms = 0;
   s_ever_attempted = false;
+  s_utc_offset_sec = 0;
 }
 
 void loop() {
@@ -169,6 +184,7 @@ Reading cached() {
   r.baroInHg = s_baro_inhg;
   r.valid = s_valid;
   r.age_ms = s_last_fetch_ms == 0 ? 0 : (millis() - s_last_fetch_ms);
+  r.utcOffsetSec = s_utc_offset_sec;
   return r;
 }
 

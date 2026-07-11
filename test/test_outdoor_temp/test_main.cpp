@@ -96,6 +96,35 @@ void test_failed_parse_does_not_wipe_prior_valid_reading(void) {
   TEST_ASSERT_FLOAT_WITHIN(0.1f, 68.0f, ot::cached().tempF);
 }
 
+void test_utc_offset_seconds_parses_from_top_level(void) {
+  // When the URL includes &timezone=auto, Open-Meteo returns
+  // utc_offset_seconds at the TOP level of the response — not under
+  // "current". Confirm the parser reads it there and exposes it on the
+  // cached Reading. Cockpit uses this to render home-local HH:MM.
+  const char* body =
+    "{\"utc_offset_seconds\":-25200,"
+    "\"timezone\":\"America/Los_Angeles\","
+    "\"current\":{\"temperature_2m\":68}}";
+  TEST_ASSERT_TRUE(ot::ingestPayloadForTest(body, std::strlen(body)));
+  TEST_ASSERT_EQUAL_INT(-25200, ot::cached().utcOffsetSec);
+}
+
+void test_missing_utc_offset_leaves_prior_offset_in_place(void) {
+  // A response without utc_offset_seconds shouldn't reset a previously
+  // cached offset — the last known value is better than reverting to 0
+  // (UTC) mid-display.
+  const char* with_offset =
+    "{\"utc_offset_seconds\":-18000,"
+    "\"current\":{\"temperature_2m\":50}}";
+  const char* without =
+    "{\"current\":{\"temperature_2m\":55}}";
+  TEST_ASSERT_TRUE(ot::ingestPayloadForTest(with_offset,
+                                             std::strlen(with_offset)));
+  TEST_ASSERT_EQUAL_INT(-18000, ot::cached().utcOffsetSec);
+  TEST_ASSERT_TRUE(ot::ingestPayloadForTest(without, std::strlen(without)));
+  TEST_ASSERT_EQUAL_INT(-18000, ot::cached().utcOffsetSec);
+}
+
 int main(int /*argc*/, char** /*argv*/) {
   UNITY_BEGIN();
   RUN_TEST(test_valid_full_payload_parses_all_fields);
@@ -106,5 +135,7 @@ int main(int /*argc*/, char** /*argv*/) {
   RUN_TEST(test_wind_string_type_falls_back_to_nan);
   RUN_TEST(test_second_successful_parse_overwrites_first);
   RUN_TEST(test_failed_parse_does_not_wipe_prior_valid_reading);
+  RUN_TEST(test_utc_offset_seconds_parses_from_top_level);
+  RUN_TEST(test_missing_utc_offset_leaves_prior_offset_in_place);
   return UNITY_END();
 }
