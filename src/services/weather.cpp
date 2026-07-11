@@ -18,6 +18,7 @@
 
 #include "services/metar_config.h"
 #include "services/weather_category.h"
+#include "services/weather_geo.h"
 
 namespace services::weather {
 
@@ -32,9 +33,6 @@ Station s_stations[kMaxStations] = {};
 size_t s_station_count = 0;
 
 unsigned long s_last_update_ms = 0;
-
-constexpr float kNmPerDeg = 60.0f;   // 1° of lat ≈ 60 nm
-constexpr float kDegToRad = 3.14159265358979323846f / 180.0f;
 
 int parseVisibility(JsonVariantConst v) {
   if (v.is<const char*>()) {
@@ -64,29 +62,6 @@ int32_t parseCeiling(JsonArrayConst clouds) {
     }
   }
   return ceiling;
-}
-
-float distanceNm(float lat1, float lon1, float lat2, float lon2) {
-  const float cos_lat = std::cos(lat1 * kDegToRad);
-  const float dlat_nm = (lat2 - lat1) * kNmPerDeg;
-  const float dlon_nm = (lon2 - lon1) * kNmPerDeg * cos_lat;
-  return std::sqrt(dlat_nm * dlat_nm + dlon_nm * dlon_nm);
-}
-
-// Bbox around (center_lat, center_lon) with `radius_nm` half-diagonal.
-// We inflate slightly (·1.1) so stations that project just past the map
-// edge still get fetched — the projection layer culls them by pixel
-// distance, not lat/lon.
-void makeBbox(float center_lat, float center_lon, float radius_nm,
-              float* lat_min, float* lon_min,
-              float* lat_max, float* lon_max) {
-  const float pad_deg = (radius_nm * 1.1f) / kNmPerDeg;
-  const float cos_lat = std::cos(center_lat * kDegToRad);
-  const float pad_lon = (cos_lat > 0.01f) ? pad_deg / cos_lat : pad_deg;
-  *lat_min = center_lat - pad_deg;
-  *lat_max = center_lat + pad_deg;
-  *lon_min = center_lon - pad_lon;
-  *lon_max = center_lon + pad_lon;
 }
 
 void ingestPayload(const char* body, size_t body_len,
@@ -121,7 +96,7 @@ void ingestPayload(const char* body, size_t body_len,
     const float lat = m["lat"].as<float>();
     const float lon = m["lon"].as<float>();
     if (row_count < sizeof(rows) / sizeof(rows[0])) {
-      rows[row_count++] = { distanceNm(center_lat, center_lon, lat, lon),
+      rows[row_count++] = { services::weather::geo::distanceNm(center_lat, center_lon, lat, lon),
                             src_idx };
     } else {
       // Replace the current farthest if this one is closer.
@@ -129,7 +104,7 @@ void ingestPayload(const char* body, size_t body_len,
       for (size_t k = 1; k < row_count; ++k) {
         if (rows[k].dist_nm > rows[worst].dist_nm) worst = k;
       }
-      const float d = distanceNm(center_lat, center_lon, lat, lon);
+      const float d = services::weather::geo::distanceNm(center_lat, center_lon, lat, lon);
       if (d < rows[worst].dist_nm) {
         rows[worst] = { d, src_idx };
       }
@@ -195,8 +170,8 @@ bool update() {
   const float center_lon = services::metar_config::centerLon();
   const float radius_nm  = services::metar_config::radiusNm();
   float lat_min, lon_min, lat_max, lon_max;
-  makeBbox(center_lat, center_lon, radius_nm,
-           &lat_min, &lon_min, &lat_max, &lon_max);
+  services::weather::geo::makeBbox(center_lat, center_lon, radius_nm,
+                                   &lat_min, &lon_min, &lat_max, &lon_max);
 
   char bbox[64];
   std::snprintf(bbox, sizeof(bbox), "%.4f,%.4f,%.4f,%.4f",
