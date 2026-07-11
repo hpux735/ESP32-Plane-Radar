@@ -159,9 +159,18 @@ def build_airports(
             continue
         atype = a.get("type", "")
         tier = AIRPORT_TIER.get(atype, 0)
+        # Tier-0 rows are heliports, seaplane bases, balloonports, and
+        # closed airports — the AIRPORT_TIER dict deliberately doesn't
+        # score them, and this radar shows fixed-wing traffic only. Skip
+        # them regardless of any other signal (an IAP flag can only
+        # ever elevate a *small* airport, never revive a heliport).
+        if tier == 0:
+            continue
         has_iap = ident in iap_set
         scheduled = (a.get("scheduled_service") or "").strip().lower() == "yes"
-        keep = has_iap or tier >= 2 or (tier == 1 and scheduled)
+        # tier 2 / 3 → always keep. tier 1 → keep only if scheduled
+        # service or a published instrument approach elevates it.
+        keep = tier >= 2 or (tier == 1 and (scheduled or has_iap))
         if not keep:
             continue
         lat = _parse_float(a.get("latitude_deg"))

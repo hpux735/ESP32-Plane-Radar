@@ -203,6 +203,50 @@ def test_iap_flag_force_includes_otherwise_filtered_airport():
     assert apts[0].instrument_approach is True
 
 
+def test_iap_flag_does_not_revive_heliport():
+    """Regression: a hospital heliport with a lighted pad ends up in
+    the IAP set (lighted-runway signal), but the type filter must
+    keep it out anyway. Otherwise CN02 (SF VA Med Center Heliport),
+    7CL0 / 7CL1 (Children's Hospital Oakland) all show up on the
+    plane radar despite being hospital pads."""
+    apts = ta.build_airports(
+        [_apt(ident="7CL1", atype="heliport", scheduled="no")],
+        [],
+        iap_icaos=["7CL1"],
+    )
+    assert apts == []
+
+
+def test_iap_flag_does_not_revive_seaplane_base():
+    """Seaplane bases aren't fixed-wing airports for this radar."""
+    apts = ta.build_airports(
+        [_apt(ident="KABC", atype="seaplane_base", scheduled="no")],
+        [],
+        iap_icaos=["KABC"],
+    )
+    assert apts == []
+
+
+def test_iap_flag_does_not_revive_closed_airport():
+    """Closed airports must never appear — active runways only."""
+    apts = ta.build_airports(
+        [_apt(ident="KABC", atype="closed", scheduled="no")],
+        [],
+        iap_icaos=["KABC"],
+    )
+    assert apts == []
+
+
+def test_iap_flag_does_not_revive_balloonport():
+    """Balloonports are novelties, not radar targets."""
+    apts = ta.build_airports(
+        [_apt(ident="KABC", atype="balloonport", scheduled="no")],
+        [],
+        iap_icaos=["KABC"],
+    )
+    assert apts == []
+
+
 def test_iap_set_case_insensitive():
     apts = ta.build_airports(
         [_apt(ident="KHAF", atype="small_airport", scheduled="no")],
