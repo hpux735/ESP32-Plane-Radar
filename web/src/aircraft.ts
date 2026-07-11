@@ -103,6 +103,11 @@ let s_aircraft: Aircraft[] = [];
 let s_lastUpdateMs = 0;
 let s_lastError: string | null = null;
 let s_fetchCount = 0;
+// Monotonic request id — every fetchAircraft call captures the value at
+// entry; when it resolves, it only writes s_aircraft if its id still
+// matches. Also bumped by clearAircraft so any in-flight fetch for the
+// old center discards its result instead of overwriting the fresh clear.
+let s_gen = 0;
 
 export function aircraft(): readonly Aircraft[] {
   return s_aircraft;
@@ -120,11 +125,21 @@ export function lastError(): string | null {
   return s_lastError;
 }
 
+// Drop the cached aircraft list. Callers invoke this the moment the
+// active center changes so old-center aircraft don't linger and get
+// projected off the visible disc.
+export function clearAircraft(): void {
+  s_aircraft = [];
+  s_lastError = null;
+  s_gen++;
+}
+
 export async function fetchAircraft(
   centerLat: number,
   centerLon: number,
   nm: number,
 ): Promise<void> {
+  const myGen = ++s_gen;
   // cache: 'no-store' so the browser doesn't reuse a stale copy after
   // the Worker's short edge-cache window. Aircraft are moving; the API
   // is our single source of freshness.
@@ -132,20 +147,20 @@ export async function fetchAircraft(
     `api/adsb?lat=${centerLat.toFixed(4)}` +
     `&lon=${centerLon.toFixed(4)}&nm=${nm.toFixed(1)}`;
   // Abort after 5 s so a stalled upstream doesn't freeze the poll loop.
-  // The polling caller uses an "in-flight" flag; if we don't abort,
-  // one slow request can block every subsequent 3 s tick.
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), 5000);
+  const timer = setTimeout(() => controller.abort(), 5000);
   try {
     const resp = await fetch(url, {
       cache: "no-store",
       signal: controller.signal,
     });
+    if (myGen !== s_gen) return;
     if (!resp.ok) {
       s_lastError = `HTTP ${resp.status}`;
       return;
     }
     const doc = (await resp.json()) as AdsbResponse;
+    if (myGen !== s_gen) return;
     const list: Aircraft[] = [];
     for (const raw of doc.ac ?? doc.aircraft ?? []) {
       const a = normalize(raw);
@@ -156,6 +171,7 @@ export async function fetchAircraft(
     s_lastError = null;
     s_fetchCount += 1;
   } catch (err) {
+    if (myGen !== s_gen) return;
     s_lastError = err instanceof Error ? err.message : String(err);
   } finally {
     clearTimeout(timer);
