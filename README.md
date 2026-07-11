@@ -13,7 +13,7 @@ Firmware for an **ESP32-C3 Super Mini** and a **1.28″ round GC9A01** display (
 > Personal fork of [`MatixYo/ESP32-Plane-Radar`](https://github.com/MatixYo/ESP32-Plane-Radar). See [**FORK.md**](FORK.md) for the full changelog; the additions in one glance:
 >
 > - **SDL desktop emulator** — the full radar renders in a Mac window (`pio run -e native`), no ESP32 needed to iterate.
-> - **Web preview** — TypeScript port under [`web/`](web/), deployable to Cloudflare Pages for free; try the interface in a browser without hardware.
+> - **Web preview** — TypeScript port under [`web/`](web/), deployed to [radar.benyaffe.com](https://radar.benyaffe.com) via Netlify; try the interface in a browser without hardware.
 > - **Live weather view** — triple-tap for a VFR/MVFR/IFR/LIFR dot map of nearby airports (METAR from aviationweather.gov — global, any ICAO).
 > - **Focus cycling** — double-tap moves the radar center through a Bay Area preset ring (Sutro → SFO → OAK → SJC → HWD → SQL → PAO → HAF), each with its own default zoom.
 > - **Map overlays** — coastline, land tint, major highways, and large-airport runways baked into flash from Natural Earth + OurAirports.

@@ -1,5 +1,6 @@
-// Aircraft fetch + parse. Calls /api/adsb (proxied to opendata.adsb.fi
-// by the Cloudflare Pages Function) and normalizes the response into a
+// Aircraft fetch + parse. Calls /api/adsb (proxied to
+// airplanes.live / opendata.adsb.fi by the Netlify Function at
+// web/netlify/functions/adsb.mjs) and normalizes the response into a
 // shape aligned with the firmware's services::adsb::Aircraft struct.
 
 export interface Aircraft {

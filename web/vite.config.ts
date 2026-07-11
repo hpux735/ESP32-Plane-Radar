@@ -1,12 +1,13 @@
 import { defineConfig } from "vite";
 import type { IncomingMessage, ServerResponse } from "http";
 
-// Static site — build outputs to web/dist/, which Cloudflare Pages serves.
-// Pages Functions in web/functions/ are picked up automatically.
+// Static site — build outputs to web/dist/, which Netlify serves.
+// The real /api/adsb + /api/metar Netlify Functions live in
+// web/netlify/functions/ and take over in production.
 //
-// The dev-only middleware below emulates the Cloudflare Pages Function
-// at /api/adsb by fetching adsb.fi server-side (which bypasses the CORS
-// wall). In production the real Function takes over at the same path.
+// The dev-only middleware below emulates those two proxies by fetching
+// their upstreams server-side (bypasses the CORS wall). Only active
+// under `vite dev`; the production build has no server component.
 export default defineConfig({
   base: "./",
   build: {

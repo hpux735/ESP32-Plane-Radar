@@ -4,10 +4,7 @@ The site lives under [`web/`](.) and deploys as a static site with one
 serverless function that proxies live ADS-B data. Free forever at this
 scale, no credit card required.
 
-**Live at:** currently deploying via **Netlify** (was Cloudflare Workers
-Builds during initial exploration; migrated because Netlify's build
-UX + auto-deploy for static-with-functions was cleaner for a
-non-technical maintainer).
+**Live at:** [radar.benyaffe.com](https://radar.benyaffe.com) via **Netlify**.
 
 ## What you need
 
@@ -80,8 +77,7 @@ locally without deploying anything.
 
 - **Static assets** (`web/dist/*`): HTML, JS, CSS, baked geographic
   JSON files. Served straight off Netlify's edge CDN.
-- **One Netlify Function** (`web/netlify/functions/adsb.ts`, migrated
-  from the Cloudflare Worker at `web/worker.ts`): proxies
+- **One Netlify Function** (`web/netlify/functions/adsb.mjs`): proxies
   `/api/adsb?lat=X&lon=Y&nm=Z` to airplanes.live (primary) and
   opendata.adsb.fi (fallback). Adds CORS headers.
 - **Live METAR** (`api.weather.gov`): called direct from the
@@ -101,11 +97,3 @@ locally without deploying anything.
   is first.
 - **Weather view says "no data"** — CORS on `api.weather.gov` was
   working when this was written. If it stops, that's on the NWS end.
-
-## Notes on the older Cloudflare setup
-
-If you had a working Cloudflare Workers Builds deploy from earlier
-iterations, `web/worker.ts` and `web/wrangler.jsonc` are still in the
-tree — they'd still deploy correctly under Cloudflare Workers if you
-ever want to switch back. The Netlify function at `web/functions/adsb.js`
-does the same job in the Netlify runtime.
