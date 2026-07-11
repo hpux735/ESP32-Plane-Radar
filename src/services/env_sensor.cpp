@@ -18,21 +18,16 @@ Reading read() { return {0.0f, 0.0f, false}; }
 #include <Arduino.h>
 #include <Wire.h>
 
-#include "config.h"
+#include "services/i2c_bus.h"
 
 namespace services::env_sensor {
 namespace {
 
 Adafruit_BME280 s_bme;
 uint8_t s_address = 0;  // 0 = not present
-bool s_probed = false;
 
 bool probe() {
-  if (!s_probed) {
-    Wire.begin(config::kBmeSdaPin, config::kBmeSclPin);
-    Wire.setClock(100000);
-    s_probed = true;
-  }
+  services::i2c_bus::ensureInit();
   if (s_bme.begin(0x77, &Wire)) { s_address = 0x77; return true; }
   if (s_bme.begin(0x76, &Wire)) { s_address = 0x76; return true; }
   return false;
@@ -42,7 +37,6 @@ bool probe() {
 
 void init() {
   s_address = 0;
-  s_probed = false;
   if (probe()) {
     Serial.printf("env_sensor: BME280 found at 0x%02X\n", s_address);
   } else {

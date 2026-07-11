@@ -20,6 +20,7 @@ bool consumeDoubleTap() { return false; }
 #include <Wire.h>
 
 #include "config.h"
+#include "services/i2c_bus.h"
 
 namespace services::tap_sensor {
 namespace {
@@ -79,10 +80,7 @@ uint8_t readReg(uint8_t reg) {
 }
 
 bool probe() {
-  // env_sensor.cpp calls Wire.begin() too — Wire is a singleton and
-  // begin() is idempotent, so co-existing on the same bus is fine.
-  Wire.begin(config::kBmeSdaPin, config::kBmeSclPin);
-  Wire.setClock(100000);
+  services::i2c_bus::ensureInit();
   return readReg(kRegDeviceId) == kExpectedDeviceId;
 }
 
