@@ -119,9 +119,11 @@ describe("distanceNm", () => {
 // helpers underneath.
 
 function stubJsonResponse(rows: unknown, ok = true, status = 200) {
-  const fetchMock = vi.fn(() => Promise.resolve(new Response(
-    JSON.stringify(rows), { status: ok ? 200 : status },
-  )));
+  const fetchMock = vi.fn(
+    (_url: RequestInfo | URL, _init?: RequestInit) => Promise.resolve(new Response(
+      JSON.stringify(rows), { status: ok ? 200 : status },
+    )),
+  );
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
 }

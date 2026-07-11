@@ -177,8 +177,9 @@ describe("main.ts — subscriber wiring", () => {
 
 describe("main.ts — poll loop", () => {
   it("triggers an aircraft fetch when the radar view + subscribe fires", async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve(new Response(JSON.stringify({ ac: [{ hex: "H1", lat: 37, lon: -122 }] }), { status: 200 })),
+    const fetchMock = vi.fn(
+      (_url: RequestInfo | URL, _init?: RequestInit) =>
+        Promise.resolve(new Response(JSON.stringify({ ac: [{ hex: "H1", lat: 37, lon: -122 }] }), { status: 200 })),
     );
     vi.stubGlobal("fetch", fetchMock);
 
