@@ -11,6 +11,7 @@
 #include <ArduinoJson.h>
 
 #include <climits>
+#include <cmath>
 #include <cstring>
 
 #include "config.h"
