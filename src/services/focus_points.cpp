@@ -144,11 +144,6 @@ void init() {
   applyCurrent();
 }
 
-void cycle() {
-  if (s_ring_count == 0) return;
-  setIndex(static_cast<size_t>((s_index + 1) % s_ring_count));
-}
-
 void setIndex(size_t idx) {
   if (s_ring_count == 0 || idx >= s_ring_count) return;
   s_index = static_cast<uint8_t>(idx);

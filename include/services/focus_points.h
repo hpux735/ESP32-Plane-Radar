@@ -23,10 +23,6 @@ struct FocusPoint {
 /** Load persistent focus index from flash (defaults to Home). */
 void init();
 
-/** Advance to the next focus in the ring, apply its lat/lon + default
- *  range preset. Persists the new index. */
-void cycle();
-
 /** Jump to a specific focus by index, apply its lat/lon + default range
  *  preset. Persists the new index. Ignored if `idx >= count()`. Used by
  *  the two-gesture screen ring in main.cpp — each radar slot in the ring
