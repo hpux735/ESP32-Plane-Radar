@@ -9,7 +9,7 @@ import tzlookup from "tz-lookup";
 import { CENTER_X, CENTER_Y, SIZE, PHYSICAL_PANEL_RADIUS } from "./theme";
 import { state } from "./state";
 import { cachedReading, type WxReading } from "./outdoorTemp";
-import { STATIONS, distanceNm, lastUpdateMs } from "./weather";
+import { lastUpdateMs } from "./weather";
 import { formatFreshness } from "./weatherView";
 import { bearingDeg, compass8 } from "./projection";
 import { nearestIapAirport } from "./airports";
@@ -94,16 +94,26 @@ function formatInZone(now: Date, timeZone: string): string {
 }
 
 function drawTime(ctx: CanvasRenderingContext2D, hhmm: string): void {
-  // "12:34L" — append the L in the same face at the same size so the
-  // whole string measures as one glyph run and centers naturally.
-  const text = `${hhmm}L`;
+  // Big 40 px bold mono for HH:MM, then a small "L" (same size + face
+  // as the Zulu marker below) tucked just to the right of the last
+  // digit's right edge. Center the HH:MM at CENTER_X — the L sits
+  // outside that centering so the numeric digits stay symmetric.
   ctx.fillStyle = WHITE;
-  // Canvas doesn't have LovyanGFX's seven-segment Font7 — use a bold
-  // monospace at similar size so the layout matches.
   ctx.font = "bold 40px ui-monospace, SFMono-Regular, Menlo, monospace";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(text, CENTER_X, CENTER_Y);
+  ctx.fillText(hhmm, CENTER_X, CENTER_Y);
+
+  const timeHalfW = ctx.measureText(hhmm).width / 2;
+  const lX = CENTER_X + timeHalfW + 3;
+  ctx.font = "10px system-ui, sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  // Same TEMP color as the Zulu below so the two markers read as a
+  // matched pair. Baseline nudged down 1 px so the small "L" visually
+  // sits at the bottom of the digits' baseline.
+  ctx.fillStyle = TEMP;
+  ctx.fillText("L", lX, CENTER_Y + 8);
 }
 
 function drawZulu(ctx: CanvasRenderingContext2D, now: Date): void {
@@ -224,29 +234,21 @@ function drawSensorBlock(ctx: CanvasRenderingContext2D, wx: WxReading): void {
   // when it lands.
 }
 
-// "1.2 nm NE of KSFO" — distance/bearing from the nearest METAR station
-// (the source of wind/baro on this screen) to the nearest airport with
-// a published instrument approach. If within 0.1 nm, just "KSFO". No
-// text if the airport index isn't loaded or no METAR station is known.
+// "1.2 nm NE of KSFO" — where the home planning point sits relative to
+// the nearest IAP-capable airport. If home is within 0.1 nm of that
+// airport, show just "KSFO". Returns null if the airport index isn't
+// loaded yet or the scan finds no IAP row (should not happen once
+// airport_index.json is present).
 function referencePositionLabel(): string | null {
   if (!indexData) return null;
-  if (STATIONS.length === 0) return null;
-  // Nearest METAR station to the METAR-map center (state.metar). This
-  // matches what the wind/baro numbers actually reflect — the weather
-  // fetch pulls the closest station's report to that center.
-  let sta = STATIONS[0];
-  let bestD = distanceNm(state.metar.centerLat, state.metar.centerLon,
-                         sta.lat, sta.lon);
-  for (let i = 1; i < STATIONS.length; i++) {
-    const s = STATIONS[i];
-    const d = distanceNm(state.metar.centerLat, state.metar.centerLon,
-                         s.lat, s.lon);
-    if (d < bestD) { bestD = d; sta = s; }
-  }
-  const nearest = nearestIapAirport(indexData.airportIndex, sta.lat, sta.lon);
-  if (!nearest) return sta.icao;
+  const nearest = nearestIapAirport(
+    indexData.airportIndex, state.home.lat, state.home.lon);
+  if (!nearest) return null;
   if (nearest.distanceNm <= 0.1) return nearest.icao;
-  const brg = bearingDeg(sta.lat, sta.lon, nearest.lat, nearest.lon);
+  // Bearing FROM the airport TO home reads naturally as "home is X of
+  // airport" — e.g. bearing 350° → home is N of the airport.
+  const brg = bearingDeg(
+    nearest.lat, nearest.lon, state.home.lat, state.home.lon);
   return `${nearest.distanceNm.toFixed(1)} nm ${compass8(brg)} of ${nearest.icao}`;
 }
 

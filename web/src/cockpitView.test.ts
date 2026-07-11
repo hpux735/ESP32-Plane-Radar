@@ -26,13 +26,26 @@ describe("drawCockpitView", () => {
     expect(ctx.countOf("moveTo")).toBeGreaterThanOrEqual(60);
   });
 
-  it("renders an HH:MML local clock string (never '--:--' since JS Date always syncs)", () => {
+  it("renders a 24-hour HH:MM local clock string (never AM/PM, never '--:--')", () => {
     const ctx = makeCanvasSpy();
     drawCockpitView(ctx);
-    // Big local time carries an 'L' suffix; e.g. "14:03L".
     const textCalls = ctx.callsOf("fillText").map(c => String(c.args[0]));
-    expect(textCalls.some(t => /^\d{2}:\d{2}L$/.test(t))).toBe(true);
+    // Big local time is now just HH:MM — the "L" suffix is drawn as a
+    // separate small fillText call. Hour must be 00-23 (24h clock).
+    const timeCall = textCalls.find(t => /^\d{2}:\d{2}$/.test(t));
+    expect(timeCall).toBeDefined();
+    const hh = parseInt(timeCall!.slice(0, 2), 10);
+    expect(hh).toBeGreaterThanOrEqual(0);
+    expect(hh).toBeLessThanOrEqual(23);
+    expect(textCalls.every(t => !/AM|PM/i.test(t))).toBe(true);
     expect(textCalls.every(t => t !== "--:--")).toBe(true);
+  });
+
+  it("draws a small 'L' marker separate from the big HH:MM time", () => {
+    const ctx = makeCanvasSpy();
+    drawCockpitView(ctx);
+    const textCalls = ctx.callsOf("fillText").map(c => String(c.args[0]));
+    expect(textCalls).toContain("L");
   });
 
   it("renders a Zulu time string in HH:MM Z format", () => {

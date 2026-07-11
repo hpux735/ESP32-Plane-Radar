@@ -359,6 +359,12 @@ export function mountSettings(airportIndex: AirportIndexRow[]): void {
 
   // Home + METAR "Center on airport" boxes. Both accept ICAO/IATA (via
   // airport typeahead) AND street addresses (via geocode).
+  //
+  // Round lat/lon to 6 decimal places (~11 cm precision) so writes match
+  // the number inputs' step=0.000001 constraint — HTML5 form validation
+  // otherwise rejects Nominatim's 7-decimal responses with "Please enter
+  // a valid value".
+  const fmtCoord = (n: number) => n.toFixed(6);
   for (const input of Array.from(form.querySelectorAll<HTMLInputElement>(".airport-search"))) {
     const target = input.dataset.target;
     const suggest = input.nextElementSibling as HTMLUListElement;
@@ -369,27 +375,32 @@ export function mountSettings(airportIndex: AirportIndexRow[]): void {
       onPick(row) {
         const [icao, , , , lat, lon] = row;
         if (target === "home") {
-          (form.elements.namedItem("home_lat") as HTMLInputElement).value = String(lat);
-          (form.elements.namedItem("home_lon") as HTMLInputElement).value = String(lon);
+          (form.elements.namedItem("home_lat") as HTMLInputElement).value = fmtCoord(lat);
+          (form.elements.namedItem("home_lon") as HTMLInputElement).value = fmtCoord(lon);
           syncFocusHomeRow();
         } else if (target === "metar") {
-          (form.elements.namedItem("metar_lat") as HTMLInputElement).value = String(lat);
-          (form.elements.namedItem("metar_lon") as HTMLInputElement).value = String(lon);
+          (form.elements.namedItem("metar_lat") as HTMLInputElement).value = fmtCoord(lat);
+          (form.elements.namedItem("metar_lon") as HTMLInputElement).value = fmtCoord(lon);
         }
         input.value = icao;
       },
       onAddressPick(hit) {
         if (target === "home") {
-          (form.elements.namedItem("home_lat") as HTMLInputElement).value = String(hit.lat);
-          (form.elements.namedItem("home_lon") as HTMLInputElement).value = String(hit.lon);
+          (form.elements.namedItem("home_lat") as HTMLInputElement).value = fmtCoord(hit.lat);
+          (form.elements.namedItem("home_lon") as HTMLInputElement).value = fmtCoord(hit.lon);
           syncFocusHomeRow();
         } else if (target === "metar") {
-          (form.elements.namedItem("metar_lat") as HTMLInputElement).value = String(hit.lat);
-          (form.elements.namedItem("metar_lon") as HTMLInputElement).value = String(hit.lon);
+          (form.elements.namedItem("metar_lat") as HTMLInputElement).value = fmtCoord(hit.lat);
+          (form.elements.namedItem("metar_lon") as HTMLInputElement).value = fmtCoord(hit.lon);
         }
-        // Show a shortened version in the input so it's clear an
-        // address was picked (full display_name can be very long).
-        input.value = hit.displayName.split(",")[0];
+        // Nominatim formats house-numbered addresses as
+        // "2125, Bryant Street, Inner Mission, San Francisco, …" —
+        // splitting on the first comma alone would leave just "2125"
+        // in the input. Keep the first ~2 parts so it reads as a
+        // recognizable street address without swallowing the whole
+        // administrative tail.
+        const parts = hit.displayName.split(",").map((s) => s.trim()).filter(Boolean);
+        input.value = parts.slice(0, 2).join(" ") || hit.displayName;
       },
     });
   }
