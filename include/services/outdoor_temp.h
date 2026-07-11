@@ -31,4 +31,10 @@ void loop();
 /** Latest cached reading. `valid` is false until the first successful fetch. */
 Reading cached();
 
+/** Parse an Open-Meteo `/v1/forecast` JSON body into the cached reading
+ *  state, bypassing HTTP. Returns false + leaves state alone on parse
+ *  errors or missing temperature_2m. Exposed for tests — production
+ *  code goes through loop() → doFetch(). */
+bool ingestPayloadForTest(const char* body, unsigned long body_len);
+
 }  // namespace services::outdoor_temp

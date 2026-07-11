@@ -40,4 +40,9 @@ void setPollFn(PollFn fn);
 /** Fetch aircraft within fetch_radius_km of center_lat/lon from adsb.fi. */
 bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km);
 
+/** Parse an adsb.fi JSON body directly into the cached aircraft list,
+ *  bypassing HTTP. Returns false + leaves the list alone on parse errors.
+ *  Exposed for tests — production callers use fetchUpdate(). */
+bool ingestPayloadForTest(const char* body, unsigned long body_len);
+
 }  // namespace services::adsb

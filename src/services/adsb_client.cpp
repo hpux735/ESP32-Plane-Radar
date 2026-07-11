@@ -1,7 +1,12 @@
 #include "services/adsb_client.h"
 
+// HTTPClient / WiFiClientSecure are ESP32-only. Under UNIT_TEST
+// (pio test -e native_test) we skip the fetchUpdate implementation and
+// only compile the pure parse path so tests don't need HTTP host shims.
+#ifndef UNIT_TEST
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#endif
 
 #include <ArduinoJson.h>
 
@@ -64,6 +69,7 @@ void pollNetwork() {
   }
 }
 
+#ifndef UNIT_TEST
 int performGetWithPoll(HTTPClient& http) {
   http.setConnectTimeout(kConnectAttemptMs);
   const unsigned long deadline = millis() + kRequestTimeoutMs;
@@ -81,6 +87,7 @@ int performGetWithPoll(HTTPClient& http) {
   }
   return HTTPC_ERROR_READ_TIMEOUT;
 }
+#endif  // !UNIT_TEST
 
 float kmToNauticalMiles(float km) { return km / kKmPerNm; }
 
@@ -190,6 +197,27 @@ uint16_t pickSquawk(const JsonObject& plane) {
   return 0;
 }
 
+size_t populateFromArray(JsonArray ac) {
+  if (ac.isNull()) return 0;
+  size_t n = 0;
+  for (JsonObject plane : ac) {
+    if (n >= kMaxAircraft) break;
+    if (!plane["lat"].is<float>() || !plane["lon"].is<float>()) continue;
+    if (isOnGround(plane) && !config::kAdsbShowGroundAircraft) continue;
+    s_aircraft[n].lat = plane["lat"].as<float>();
+    s_aircraft[n].lon = plane["lon"].as<float>();
+    s_aircraft[n].nose_deg = pickNoseHeading(plane);
+    s_aircraft[n].track_deg = pickTrackHeading(plane);
+    s_aircraft[n].gs_knots = pickGroundSpeed(plane);
+    // fillTagFields is defined below — forward-declare so it's visible
+    // here.
+    void fillTagFields(Aircraft*, const JsonObject&);
+    fillTagFields(&s_aircraft[n], plane);
+    ++n;
+  }
+  return n;
+}
+
 void fillTagFields(Aircraft* ac, const JsonObject& plane) {
   // Callsign preference: flight (dispatch callsign, e.g. UAL1234) →
   // registration / tail number (e.g. N12345) → hex ICAO transponder code
@@ -219,6 +247,7 @@ unsigned long lastUpdateMs() { return s_last_update_ms; }
 
 unsigned long fetchCount() { return s_fetch_count; }
 
+#ifndef UNIT_TEST
 bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
   // Bail early when the heap is tight — the previous full-body-into-String
   // path used to crash with NoMemory/EmptyInput on busy sectors (SFO Bravo).
@@ -274,37 +303,23 @@ bool fetchUpdate(double center_lat, double center_lon, float fetch_radius_km) {
     return false;
   }
 
-  JsonArray ac = doc["ac"].as<JsonArray>();
-  if (ac.isNull()) {
-    s_aircraft_count = 0;
-    return true;
-  }
-
-  size_t n = 0;
-  for (JsonObject plane : ac) {
-    if (n >= kMaxAircraft) {
-      break;
-    }
-    if (!plane["lat"].is<float>() || !plane["lon"].is<float>()) {
-      continue;
-    }
-    if (isOnGround(plane) && !config::kAdsbShowGroundAircraft) {
-      continue;
-    }
-
-    s_aircraft[n].lat = plane["lat"].as<float>();
-    s_aircraft[n].lon = plane["lon"].as<float>();
-    s_aircraft[n].nose_deg = pickNoseHeading(plane);
-    s_aircraft[n].track_deg = pickTrackHeading(plane);
-    s_aircraft[n].gs_knots = pickGroundSpeed(plane);
-    fillTagFields(&s_aircraft[n], plane);
-    ++n;
-  }
-
-  s_aircraft_count = n;
+  s_aircraft_count = populateFromArray(doc["ac"].as<JsonArray>());
   s_last_update_ms = millis();
   ++s_fetch_count;
-  Serial.printf("adsb: %u aircraft\n", static_cast<unsigned>(n));
+  Serial.printf("adsb: %u aircraft\n", static_cast<unsigned>(s_aircraft_count));
+  return true;
+}
+#endif  // !UNIT_TEST
+
+bool ingestPayloadForTest(const char* body, unsigned long body_len) {
+  ensureFilterBuilt();
+  JsonDocument doc;
+  const DeserializationError err = deserializeJson(
+      doc, body, static_cast<size_t>(body_len),
+      DeserializationOption::Filter(s_filter));
+  if (err) return false;
+  s_aircraft_count = populateFromArray(doc["ac"].as<JsonArray>());
+  ++s_fetch_count;
   return true;
 }
 

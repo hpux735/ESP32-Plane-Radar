@@ -172,4 +172,11 @@ Reading cached() {
   return r;
 }
 
+// Public thunk into the anon-namespace parser. Anon-namespace members
+// are visible to the whole TU via unqualified lookup so this call
+// resolves to the ingestPayload defined higher up in the file.
+bool ingestPayloadForTest(const char* body, unsigned long body_len) {
+  return ingestPayload(body, static_cast<size_t>(body_len));
+}
+
 }  // namespace services::outdoor_temp
