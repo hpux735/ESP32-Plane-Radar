@@ -395,6 +395,27 @@ void ensureWifiManager() {
           reinterpret_cast<const char*>(_binary_data_airport_index_json_gz_start),
           len);
     });
+    // Portal styling + JS live in flash and stream via send_P so they
+    // never end up inside WiFiManager's response String. WM does
+    // `page += _customHeadElement` — inlining the whole ~20 KB body
+    // there forced a heap alloc that failed on a fragmented heap
+    // (worse after the 58 KB frame sprite is pre-allocated at boot),
+    // and the entire customization silently dropped — /param regressed
+    // to raw JSON textareas and duplicate "Latitude" labels. Splitting
+    // the CSS/JS out here keeps WM's response tiny and the browser
+    // pulls them separately.
+    s_wm.server->on("/pr.css", []() {
+      s_wm.server->sendHeader("Cache-Control", "public, max-age=86400");
+      s_wm.server->send_P(200, "text/css",
+                          plane_radar::portal::kCustomCss,
+                          sizeof(plane_radar::portal::kCustomCss) - 1);
+    });
+    s_wm.server->on("/pr.js", []() {
+      s_wm.server->sendHeader("Cache-Control", "public, max-age=86400");
+      s_wm.server->send_P(200, "application/javascript",
+                          plane_radar::portal::kCustomJs,
+                          sizeof(plane_radar::portal::kCustomJs) - 1);
+    });
     // POST /reset-settings — wipes every settings-related NVS namespace
     // (home, METAR, focus ring, range/runways, layers) and reboots. Leaves
     // the `wifi` namespace intact so the device rejoins the same Wi-Fi on

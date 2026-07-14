@@ -14,7 +14,21 @@ extern const uint8_t _binary_data_airport_index_json_gz_end[] asm(
 
 namespace plane_radar::portal {
 
-// HTML/JS/CSS injected into every WiFiManager page via setCustomHeadElement().
+// HTML/JS/CSS injected into every WiFiManager page.
+//
+// Split into three constants because WiFiManager's page renderer does
+// `page += _customHeadElement` (Arduino String concat). Injecting the
+// full 20 KB inline forces a heap alloc that grows to ~32 KB — after
+// the 58 KB frame sprite is pre-allocated at boot, the largest
+// contiguous free block frequently isn't that big, and the String
+// silently drops the append. That produced the "back to raw JSON /
+// duplicate Latitude labels / no chip editor" regression on /param.
+//
+// Solution: `kCustomHead` is now a tiny `<link>+<script>` bootstrap
+// that WM inlines (no allocation pressure). The heavy CSS/JS bodies
+// live in `kCustomCss` / `kCustomJs` and are served from `/pr.css`
+// and `/pr.js` by wifi_setup.cpp via `send_P` — streams from flash,
+// no big String required.
 //
 // On EVERY page:
 //   - kill iOS auto-caps on password / SSID fields
@@ -30,7 +44,15 @@ namespace plane_radar::portal {
 //   - intercepts the form submit to POST in place — no more dead-end
 //     "Saved" page, just a green banner and stay put
 //   - auto-populates empty home coords via ipapi.co on first load
-constexpr char kCustomHead[] = R"HTML(<style>
+
+// Injected into every page's <head>. Loads the heavier assets via
+// separate GETs so nothing large ends up in WM's response String.
+constexpr char kCustomHead[] =
+    "<link rel=\"stylesheet\" href=\"/pr.css\">"
+    "<script src=\"/pr.js\" defer></script>";
+
+// Full stylesheet — served from /pr.css.
+constexpr char kCustomCss[] = R"CSS(
 /* WiFiManager's base CSS gives every <div> `padding:5px` + `box-sizing:border-box`
    and every input/button/select `width:100%`. Custom wrapper divs would compound
    that padding, making the search box render ~20px narrower than the coord
@@ -66,7 +88,10 @@ body.invert .pr-hit{border-bottom-color:#444}
 body.invert .pr-hit:hover{background:#3a3a3a}
 body.invert .pr-hdr{border-bottom-color:#555}
 body.invert .pr-hint{color:#aaa}
-</style><script>
+)CSS";
+
+// Full script — served from /pr.js.
+constexpr char kCustomJs[] = R"JS(
 (function(){
 "use strict";
 function esc(s){return String(s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
@@ -444,6 +469,6 @@ function init(){
 
 if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",init); else init();
 })();
-</script>)HTML";
+)JS";
 
 }  // namespace plane_radar::portal
