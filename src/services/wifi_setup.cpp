@@ -135,7 +135,6 @@ WiFiManagerParameter s_param_hostname(
 char s_lyr_coast_attrs[32] = "type=\"checkbox\"";
 char s_lyr_land_attrs[32]  = "type=\"checkbox\"";
 char s_lyr_rwlg_attrs[32]  = "type=\"checkbox\"";
-char s_lyr_rwfc_attrs[32]  = "type=\"checkbox\"";
 char s_lyr_tags_attrs[32]  = "type=\"checkbox\"";
 WiFiManagerParameter s_param_lyr_coast("lyr_coast", "Coastline", "T", 2,
                                        s_lyr_coast_attrs, WFM_LABEL_AFTER);
@@ -143,8 +142,6 @@ WiFiManagerParameter s_param_lyr_land("lyr_land",  "Land shading", "T", 2,
                                       s_lyr_land_attrs, WFM_LABEL_AFTER);
 WiFiManagerParameter s_param_lyr_rwlg("lyr_rwlg",  "Airport runways", "T", 2,
                                       s_lyr_rwlg_attrs, WFM_LABEL_AFTER);
-WiFiManagerParameter s_param_lyr_rwfc("lyr_rwfc",  "Focus airport runways", "T", 2,
-                                      s_lyr_rwfc_attrs, WFM_LABEL_AFTER);
 WiFiManagerParameter s_param_lyr_tags("lyr_tags",  "Plane info tags", "T", 2,
                                       s_lyr_tags_attrs, WFM_LABEL_AFTER);
 
@@ -191,7 +188,6 @@ void refreshPortalParamDefaults() {
   seed(s_lyr_coast_attrs, ui::layers::Layer::Coastline,    s_param_lyr_coast);
   seed(s_lyr_land_attrs,  ui::layers::Layer::Land,         s_param_lyr_land);
   seed(s_lyr_rwlg_attrs,  ui::layers::Layer::RunwaysLarge, s_param_lyr_rwlg);
-  seed(s_lyr_rwfc_attrs,  ui::layers::Layer::RunwaysFocus, s_param_lyr_rwfc);
   seed(s_lyr_tags_attrs,  ui::layers::Layer::AircraftTags, s_param_lyr_tags);
 }
 
@@ -215,7 +211,6 @@ void onPortalParamsSaved() {
   apply(s_param_lyr_coast, ui::layers::Layer::Coastline);
   apply(s_param_lyr_land,  ui::layers::Layer::Land);
   apply(s_param_lyr_rwlg,  ui::layers::Layer::RunwaysLarge);
-  apply(s_param_lyr_rwfc,  ui::layers::Layer::RunwaysFocus);
   apply(s_param_lyr_tags,  ui::layers::Layer::AircraftTags);
 }
 
@@ -236,7 +231,6 @@ void attachLanExtraParams(WiFiManager& wm) {
   wm.addParameter(&s_param_lyr_coast);
   wm.addParameter(&s_param_lyr_land);
   wm.addParameter(&s_param_lyr_rwlg);
-  wm.addParameter(&s_param_lyr_rwfc);
   wm.addParameter(&s_param_lyr_tags);
   wm.addParameter(&s_param_hostname);
   wm.setSaveParamsCallback(onPortalParamsSaved);
@@ -375,6 +369,29 @@ void ensureWifiManager() {
           200, "application/json",
           reinterpret_cast<const char*>(_binary_data_airport_index_json_gz_start),
           len);
+    });
+    // POST /reset-settings — wipes every settings-related NVS namespace
+    // (home, METAR, focus ring, range/runways, layers) and reboots. Leaves
+    // the `wifi` namespace intact so the device rejoins the same Wi-Fi on
+    // next boot — matches the web app's "Reset all to defaults" scope
+    // (settings only, not credentials). BOOT-hold-3s remains the way to
+    // additionally erase Wi-Fi credentials.
+    s_wm.server->on("/reset-settings", HTTP_POST, []() {
+      constexpr const char* kSettingsNamespaces[] = {
+          "radar", "metar", "focus", "planeradar", "layers",
+      };
+      Preferences prefs;
+      for (const char* ns : kSettingsNamespaces) {
+        if (prefs.begin(ns, false)) {
+          prefs.clear();
+          prefs.end();
+          Serial.printf("reset: cleared NVS ns '%s'\n", ns);
+        }
+      }
+      s_wm.server->send(200, "application/json",
+                        "{\"ok\":true,\"reboot_in_ms\":800}");
+      delay(800);
+      esp_restart();
     });
   });
   // Captive-portal menu: no 'param' (no LAN params attached yet), but keep

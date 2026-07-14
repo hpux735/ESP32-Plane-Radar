@@ -325,7 +325,7 @@ struct TileAirport {
 
 // Tile-backed pass: iterate airports in the SECTION_AIRPORTS payload
 // of the current-location tile, draw runways for airports in range,
-// then labels. Ignores the RunwaysLarge / RunwaysFocus split from the
+// then labels. Uses the single RunwaysLarge toggle from the
 // baked path — the tile is a single unified airport list.
 void drawRunwaysFromTile(lgfx::LGFXBase& gfx,
                           const data::tile::TileBytes& bytes,
@@ -381,9 +381,7 @@ void drawLargeAirportRunways(lgfx::LGFXBase& gfx) {
   if (!radar::showRunways()) {
     return;
   }
-  const bool large_on = ui::layers::enabled(ui::layers::Layer::RunwaysLarge);
-  const bool focus_on = ui::layers::enabled(ui::layers::Layer::RunwaysFocus);
-  if (!large_on && !focus_on) return;
+  if (!ui::layers::enabled(ui::layers::Layer::RunwaysLarge)) return;
   displayFontEnsureLoaded(gfx);
   const float radius_km = radar::fetchRadiusKm();
 
@@ -398,8 +396,6 @@ void drawLargeAirportRunways(lgfx::LGFXBase& gfx) {
   const auto tbytes = data::tile::store().get(data::tile::kRenderZoom, tx, ty);
   if (tbytes.is_fallback) return;
   drawRunwaysFromTile(gfx, tbytes, radius_km);
-  (void)large_on;
-  (void)focus_on;
 }
 
 }  // namespace ui::runway

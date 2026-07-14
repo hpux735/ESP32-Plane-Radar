@@ -32,6 +32,14 @@ uint8_t s_last_z = 0;
 uint16_t s_last_x = 0;
 uint16_t s_last_y = 0;
 bool s_pending_retry = false;
+// Back-off between retries after a failed fetch. Without this, loop() retries
+// on every main-loop tick (~1 ms) — each retry allocates a WiFiClientSecure +
+// mbedTLS record buffers (~32 KB) and immediately frees them. On a heap-tight
+// device that produces relentless fragmentation until every allocation fails
+// (SSL 'Memory allocation failed', fetch guard trips, planes vanish). 30 s
+// is enough for the WiFi stack to settle after a marginal-signal event.
+constexpr unsigned long kRetryBackoffMs = 30000;
+unsigned long s_next_retry_ms = 0;
 
 #ifndef USE_NATIVE
 
@@ -119,6 +127,13 @@ void loop() {
       !shouldFetch(z, lat, lon, s_last_z, s_last_x, s_last_y, s_have_last)) {
     return;
   }
+  // Rate-limit retries. Without this, a single failure spirals into a
+  // millisecond-tight busy loop that fragments the heap into unusable dust
+  // (each retry allocates a ~32 KB mbedTLS record buffer that fails and
+  // frees, eventually starving HTTPClient/adsb.fi fetches entirely).
+  if (s_pending_retry && millis() < s_next_retry_ms) {
+    return;
+  }
 
   uint16_t x = 0, y = 0;
   data::tile::tileOfLatLon(z, lat, lon, &x, &y);
@@ -129,8 +144,9 @@ void loop() {
     s_last_y = y;
     s_pending_retry = false;
   } else {
-    // Try again on the next loop, unless the location changes first.
+    // Try again after the back-off window, unless the location changes first.
     s_pending_retry = true;
+    s_next_retry_ms = millis() + kRetryBackoffMs;
   }
 #endif
 }

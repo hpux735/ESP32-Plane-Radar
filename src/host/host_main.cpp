@@ -171,8 +171,7 @@ constexpr KeyBinding kLayerKeys[] = {
     {SDLK_1, 20, ui::layers::Layer::Coastline},
     {SDLK_2, 21, ui::layers::Layer::Land},
     {SDLK_3, 24, ui::layers::Layer::RunwaysLarge},
-    {SDLK_4, 25, ui::layers::Layer::RunwaysFocus},
-    {SDLK_5, 26, ui::layers::Layer::AircraftTags},
+    {SDLK_4, 26, ui::layers::Layer::AircraftTags},
 };
 
 bool consumeLayerKey(const KeyBinding& kb) {

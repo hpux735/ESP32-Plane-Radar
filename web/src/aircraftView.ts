@@ -94,6 +94,31 @@ function drawIcon(
   ctx.fill();
 }
 
+// Clip the segment (x0,y0)->(x1,y1) to the outer radar ring. Mirrors
+// clipPointToOuterRing in src/ui/radar_display.cpp:290 so fast-mover track
+// vectors don't run past the ring into the bezel.
+function clipToOuterRing(
+  x0: number, y0: number,
+  x1: number, y1: number,
+): { x: number; y: number } {
+  const R = GRID_OUTER_RADIUS;
+  const dxEnd = x1 - CENTER_X, dyEnd = y1 - CENTER_Y;
+  if (dxEnd * dxEnd + dyEnd * dyEnd <= R * R) return { x: x1, y: y1 };
+  // Segment/circle intersection: find t in [0,1] such that
+  // |P0 + t*(P1-P0) - C|^2 = R^2. Since the aircraft (start) sits
+  // inside the disc, the smaller positive root is the exit point.
+  const px = x0 - CENTER_X, py = y0 - CENTER_Y;
+  const rx = x1 - x0,      ry = y1 - y0;
+  const a = rx * rx + ry * ry;
+  const b = 2 * (px * rx + py * ry);
+  const c = px * px + py * py - R * R;
+  const disc = b * b - 4 * a * c;
+  if (a === 0 || disc < 0) return { x: x1, y: y1 };
+  const t = (-b + Math.sqrt(disc)) / (2 * a);
+  const tc = Math.max(0, Math.min(1, t));
+  return { x: x0 + rx * tc, y: y0 + ry * tc };
+}
+
 function drawTrackVector(
   ctx: CanvasRenderingContext2D,
   x: number, y: number,
@@ -104,13 +129,14 @@ function drawTrackVector(
   const len = speedLinePx(gs);
   if (len <= 0) return;
   const rad = ((trackDeg - 90) * Math.PI) / 180;
-  const dx = Math.cos(rad) * len;
-  const dy = Math.sin(rad) * len;
+  const tipX = x + Math.cos(rad) * len;
+  const tipY = y + Math.sin(rad) * len;
+  const end = clipToOuterRing(x, y, tipX, tipY);
   ctx.strokeStyle = emergency ? COLORS.emergency : COLORS.trackVector;
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(x, y);
-  ctx.lineTo(x + dx, y + dy);
+  ctx.lineTo(end.x, end.y);
   ctx.stroke();
 }
 

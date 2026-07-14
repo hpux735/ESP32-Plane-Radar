@@ -330,6 +330,57 @@ function interceptSave(){
   });
 }
 
+// Cancel = revert any local edits (chip additions, coord edits, layer toggle
+// clicks) by reloading /param from the server. Matches the web dialog's
+// Cancel button. Inserted next to Save.
+function addCancelButton(){
+  var form=document.querySelector("form[action*='paramsave'],form[action='paramsave']");
+  if(!form) return;
+  var save=form.querySelector("button[type=submit]");
+  if(!save) return;
+  var cancel=el("button",{"type":"button","class":"pr-cancel"},"Cancel");
+  cancel.style.cssText="background:#777 !important;margin-top:6px !important";
+  cancel.addEventListener("click",function(){
+    window.location.href="/param";  // force fresh server-state fetch
+  });
+  save.parentNode.insertBefore(cancel,save.nextSibling);
+}
+
+// Reset all settings = POST /reset-settings on the device. Clears the
+// non-Wi-Fi NVS namespaces (home, METAR, focus ring, layers, range) and
+// reboots. Confirms first — this is destructive.
+function addResetButton(){
+  var host=document.querySelector("input[name=ota_host]");
+  if(!host) return;
+  var anchor=anchorFor(host);
+  var box=el("div",null,"");
+  box.style.cssText="margin-top:12px";
+  box.innerHTML='<button type="button" class="pr-reset" style="background:#dc3630 !important">Reset all settings</button>'+
+                '<div class="pr-hint" style="margin-top:4px">Clears home, weather map, focus places, layers. Wi-Fi credentials stay.</div>';
+  // Insert AFTER the hostname field group — walk forward past the input.
+  var afterHost=host.nextSibling;
+  while(afterHost && afterHost.nodeType===3) afterHost=afterHost.nextSibling; // skip text nodes
+  if(afterHost) host.parentNode.insertBefore(box,afterHost);
+  else host.parentNode.appendChild(box);
+  box.querySelector(".pr-reset").addEventListener("click",function(){
+    if(!confirm("Reset home, weather map, focus places, and layers to defaults? Wi-Fi will stay connected.")) return;
+    var btn=box.querySelector(".pr-reset");
+    btn.disabled=true;btn.textContent="Resetting…";
+    fetch("/reset-settings",{method:"POST"})
+      .then(function(r){
+        if(!r.ok) throw new Error("reset failed: "+r.status);
+        showBanner("pr-saved","Reset ✓ — device rebooting");
+        setTimeout(function(){window.location.href="/";},2500);
+      })
+      .catch(function(err){
+        showBanner("pr-error","Reset failed — "+err.message);
+        btn.disabled=false;btn.textContent="Reset all settings";
+      });
+  });
+  // Avoid the sticky-save shadow rendering on top of our reset button.
+  anchor; // silence unused
+}
+
 function updateBranding(){
   var captive=/^192\.168\.4\.1/.test(window.location.host)||/plane-?radar[-.]setup/i.test(window.location.host);
   document.title=captive?"Plane Radar — Setup":"Plane Radar";
@@ -370,6 +421,8 @@ function init(){
   if(host) insertHeaderBefore(anchorFor(host),"Device","Advanced — change if you have more than one radar on your network.");
   if(lh&&oh) autoLocate(lh,oh);
   interceptSave();
+  addCancelButton();
+  addResetButton();
 }
 
 if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",init); else init();

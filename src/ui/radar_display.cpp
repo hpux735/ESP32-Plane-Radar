@@ -1262,6 +1262,11 @@ bool ensureFrameSprite() {
   if (s_frame_ready) {
     return true;
   }
+  // Best-effort alloc if we didn't already claim it at boot. If we're here
+  // and the sprite still isn't ready, the tile cache and Wi-Fi stack have
+  // already taken their bites — this will typically fail. Call
+  // ui::radarDisplayPreallocSprite() early in setup() to grab the 115 KB
+  // buffer while heap is still fresh.
   s_frame.setColorDepth(16);
   if (!s_frame.createSprite(radar::kSize, radar::kSize)) {
     Serial.println("radar: frame sprite alloc failed");

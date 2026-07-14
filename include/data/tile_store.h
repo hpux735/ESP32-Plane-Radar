@@ -20,10 +20,16 @@
 
 namespace data::tile {
 
-// Cache capacity. Sized so worst-case RAM footprint is manageable on
-// the ESP32-C3 SuperMini's ~180 KB available heap (typical z=7 tile
-// runs under 30 KB; 4 slots = ~120 KB worst case).
-constexpr size_t kTileCacheCapacity = 4;
+// Cache capacity. Shrunk from 4 to 1 slot: the 4-slot design was eating
+// 90-160 KB of heap (`put` mallocs per-tile at tile_store.cpp:88,
+// hydrated from every SPIFFS file at boot in tile_cache.cpp:52-78,
+// never evicted unless home moves) and starving the 115 KB radar frame
+// sprite. The device sits at a fixed home lat/lon so we only ever
+// touch one home-tile at a time; on the rare occasion home moves, the
+// old tile evicts and the new one fetches on the next cycle. Fallback
+// to the flash-embedded world tile (~14 KB in flash, not RAM) covers
+// any cache miss so the render never nulls.
+constexpr size_t kTileCacheCapacity = 1;
 
 // Result of a get() call. If `is_fallback` is true, the pointer is
 // into the flash-embedded fallback tile — caller must not free() it.
