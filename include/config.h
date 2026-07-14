@@ -59,10 +59,14 @@ constexpr int kBmeSclPin = 7;
 // probes on boot and silently disables itself.
 //
 // WARNING: GPIO 2 is an ESP32-C3 strapping pin — it MUST read HIGH at
-// boot (selects the normal SPI boot path). A standard 4.7 kΩ I²C pull-up
-// to 3V3 on the SDA line satisfies this; the ADXL345 is high-Z on
-// reset and won't fight the pull-up. Don't drive GPIO 2 low from an
-// external source during boot.
+// boot (selects the normal SPI-flash boot path). Any commodity ADXL345
+// breakout (Adafruit, generic AliExpress boards, etc.) ships with an
+// on-board pull-up on SDA that satisfies this automatically. If you
+// disconnect the sensor module, ALSO disconnect the wire from GPIO 2 —
+// don't leave the pin floating with a dangling wire, or the next boot
+// may pick the wrong boot mode. If your ADXL345 is a bare-chip module
+// with no on-board pull-ups, wire a 4.7 kΩ (or 10 kΩ) resistor from
+// GPIO 2 → 3V3 externally.
 constexpr uint8_t kTapSensorI2cAddress = 0x53;
 constexpr int kTapSdaPin = 2;
 constexpr int kTapSclPin = 5;
