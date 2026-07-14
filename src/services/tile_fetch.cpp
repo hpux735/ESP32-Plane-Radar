@@ -44,6 +44,15 @@ bool s_pending_retry = false;
 constexpr unsigned long kRetryBackoffMs = 30000;
 unsigned long s_next_retry_ms = 0;
 
+// Boot-time only: number of quick retry attempts (including the first) before
+// falling back to the 30 s runtime back-off. The runtime back-off is safe at
+// steady state but painful when home just changed — the LAN portal writes new
+// coords, esp_restart()s, and the user expects the new-home tile to load
+// promptly. Retrying here while heap is still uncontaminated by the frame
+// sprite is far more reliable than the runtime path.
+constexpr int kBootFetchAttempts = 3;
+constexpr unsigned long kBootFetchRetryDelayMs = 1000;
+
 #ifndef USE_NATIVE
 
 bool downloadTile(uint8_t z, uint16_t x, uint16_t y) {
@@ -131,12 +140,19 @@ bool fetchHomeTileSync() {
     s_pending_retry = false;
     return true;
   }
-  // Fresh fetch — heap is presumed clean here (caller responsibility).
-  if (downloadTile(z, x, y)) {
-    s_have_last = true;
-    s_last_z = z; s_last_x = x; s_last_y = y;
-    s_pending_retry = false;
-    return true;
+  // Fresh fetch — heap is presumed clean here (caller responsibility). A few
+  // quick retries before giving up: this runs pre-sprite-alloc where heap is
+  // uncontaminated, so retrying is materially more likely to succeed than
+  // waiting for the runtime 30 s back-off (which retries against the tighter
+  // steady-state heap).
+  for (int attempt = 0; attempt < kBootFetchAttempts; ++attempt) {
+    if (attempt > 0) delay(kBootFetchRetryDelayMs);
+    if (downloadTile(z, x, y)) {
+      s_have_last = true;
+      s_last_z = z; s_last_x = x; s_last_y = y;
+      s_pending_retry = false;
+      return true;
+    }
   }
   s_pending_retry = true;
   s_next_retry_ms = millis() + kRetryBackoffMs;
