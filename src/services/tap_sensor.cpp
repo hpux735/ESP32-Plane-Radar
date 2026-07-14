@@ -38,13 +38,36 @@ bool consumeDoubleTap() { return false; }
 #else
 
 #include <Arduino.h>
-#include <Wire.h>
+#include <AsyncDelay.h>
+#include <SoftWire.h>
 
 #include "config.h"
-#include "services/i2c_bus.h"
 
 namespace services::tap_sensor {
 namespace {
+
+// Dedicated software I²C bus for the ADXL345 (see kTapSdaPin/kTapSclPin
+// in config.h). The BME280 owns the hardware Wire; ESP32-C3 has no
+// second hardware I²C controller so a software bus is the only way to
+// give each sub-board its own SDA/SCL. Bit-bang cost is ~50 µs/byte at
+// 100 kHz — irrelevant for the tap sensor, which reads 1-2 bytes per
+// interrupt. SoftWire needs caller-owned TX/RX buffers; the ADXL345
+// exchanges are all 1-byte reg-addr + 1-byte value so 4-byte buffers
+// are ample. Kept static to survive across probe() re-entries.
+SoftWire s_tap_wire(config::kTapSdaPin, config::kTapSclPin);
+uint8_t s_tap_tx_buf[4];
+uint8_t s_tap_rx_buf[4];
+bool s_wire_inited = false;
+
+void ensureTapWireInit() {
+  if (s_wire_inited) return;
+  s_tap_wire.setTxBuffer(s_tap_tx_buf, sizeof(s_tap_tx_buf));
+  s_tap_wire.setRxBuffer(s_tap_rx_buf, sizeof(s_tap_rx_buf));
+  s_tap_wire.setTimeout_ms(10);
+  s_tap_wire.setDelay_us(5);   // ~100 kHz
+  s_tap_wire.begin();
+  s_wire_inited = true;
+}
 
 // ADXL345 register map (from the datasheet, rev D).
 constexpr uint8_t kRegDeviceId    = 0x00;
@@ -86,22 +109,23 @@ bool s_single_pending = false;
 bool s_double_pending = false;
 
 bool writeReg(uint8_t reg, uint8_t val) {
-  Wire.beginTransmission(config::kTapSensorI2cAddress);
-  Wire.write(reg);
-  Wire.write(val);
-  return Wire.endTransmission() == 0;
+  s_tap_wire.beginTransmission(config::kTapSensorI2cAddress);
+  s_tap_wire.write(reg);
+  s_tap_wire.write(val);
+  return s_tap_wire.endTransmission() == 0;
 }
 
 uint8_t readReg(uint8_t reg) {
-  Wire.beginTransmission(config::kTapSensorI2cAddress);
-  Wire.write(reg);
-  if (Wire.endTransmission(false) != 0) return 0;
-  Wire.requestFrom(config::kTapSensorI2cAddress, static_cast<uint8_t>(1));
-  return Wire.available() ? Wire.read() : 0;
+  s_tap_wire.beginTransmission(config::kTapSensorI2cAddress);
+  s_tap_wire.write(reg);
+  if (s_tap_wire.endTransmission(false) != 0) return 0;
+  s_tap_wire.requestFrom(config::kTapSensorI2cAddress,
+                          static_cast<uint8_t>(1));
+  return s_tap_wire.available() ? s_tap_wire.read() : 0;
 }
 
 bool probe() {
-  services::i2c_bus::ensureInit();
+  ensureTapWireInit();
   return readReg(kRegDeviceId) == kExpectedDeviceId;
 }
 

@@ -43,17 +43,29 @@ constexpr unsigned long kMultiTapWindowMs = 500UL;
 constexpr size_t kMaxFocusAirports = 6;
 
 // --- Optional BME280 environmental sensor (I²C, address 0x76 or 0x77) ---
-// Pins picked to avoid the SPI display on 0/1/3/4/10. Leave unconnected
-// if no sensor is present — env_sensor.cpp probes on boot and silently
-// disables itself when nothing answers.
+// Lives on the ESP32-C3's hardware I²C bus (Wire). Pins picked to avoid
+// the SPI display on 0/1/3/4/10. Leave unconnected if no sensor is
+// present — env_sensor.cpp probes on boot and silently disables itself
+// when nothing answers.
 constexpr int kBmeSdaPin = 6;
 constexpr int kBmeSclPin = 7;
 
 // --- Optional ADXL345 knock-the-case tap sensor (I²C, address 0x53) ---
-// Shares the I²C bus with the BME280 (different address). Wire SDO to
-// GND for 0x53; VCC/GND to 3V3/GND; SDA/SCL to the pins above. Leave
-// unconnected if only the BOOT button is used for input.
+// Lives on a DEDICATED software-I²C bus (SoftWire) on the C3's spare
+// pins, so this sub-board plugs onto its own header row without daisy-
+// chaining SDA/SCL over to the BME280. Wire ADXL345 SDO to GND for
+// address 0x53; VCC/GND to 3V3/GND; SDA/SCL to the pins below. Leave
+// unconnected if only the BOOT button is used for input — tap_sensor.cpp
+// probes on boot and silently disables itself.
+//
+// WARNING: GPIO 2 is an ESP32-C3 strapping pin — it MUST read HIGH at
+// boot (selects the normal SPI boot path). A standard 4.7 kΩ I²C pull-up
+// to 3V3 on the SDA line satisfies this; the ADXL345 is high-Z on
+// reset and won't fight the pull-up. Don't drive GPIO 2 low from an
+// external source during boot.
 constexpr uint8_t kTapSensorI2cAddress = 0x53;
+constexpr int kTapSdaPin = 2;
+constexpr int kTapSclPin = 5;
 
 // --- Display: GC9A01 1.28" round 240×240 (SPI) ---
 constexpr gpio_num_t kDisplayPinRst = GPIO_NUM_0;
