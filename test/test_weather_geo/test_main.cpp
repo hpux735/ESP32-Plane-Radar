@@ -17,6 +17,7 @@
 using services::weather::geo::bearingDeg;
 using services::weather::geo::compass8;
 using services::weather::geo::distanceNm;
+using services::weather::geo::magneticDeclinationDeg;
 using services::weather::geo::makeBbox;
 
 void setUp(void) {}
@@ -141,6 +142,49 @@ void test_compass8_normalizes_negative_and_wraparound(void) {
   TEST_ASSERT_EQUAL_STRING("E",  compass8(720.0f + 90.0f));
 }
 
+// ---- magneticDeclinationDeg -----------------------------------------
+// Tilted-dipole approximation — accuracy target is ~5° globally / ~2-4°
+// in mid-latitudes. Tests here use wide tolerances against
+// well-known real-world declinations (NOAA WMM 2020).
+
+void test_declination_bay_area_is_east_positive(void) {
+  // SFO area: actual declination ~+13.7°E in 2025. Dipole model gives ~10°.
+  // Assert sign + within 6° so the 8-point compass still moves bearings
+  // that sit near a bin boundary into the intuitively-correct bucket.
+  const float d = magneticDeclinationDeg(37.6f, -122.4f);
+  TEST_ASSERT_TRUE_MESSAGE(d > 0.0f, "SFO declination should be positive (east)");
+  TEST_ASSERT_FLOAT_WITHIN(6.0f, 13.7f, d);
+}
+
+void test_declination_finite_and_bounded(void) {
+  // Algorithmic sanity: no NaN/Inf and inside [-90°, +90°] anywhere on
+  // Earth. Guards against wraparound bugs in the atan2 branch. Real WMM
+  // stays inside about ±40° globally (excluding polar regions); the model
+  // can exceed that but must always stay physically bounded.
+  const float lats[] = {-60.0f, -30.0f, 0.0f, 30.0f, 60.0f};
+  const float lons[] = {-150.0f, -60.0f, 0.0f, 60.0f, 150.0f};
+  for (float lat : lats) {
+    for (float lon : lons) {
+      const float d = magneticDeclinationDeg(lat, lon);
+      TEST_ASSERT_TRUE_MESSAGE(std::isfinite(d), "declination must be finite");
+      TEST_ASSERT_TRUE_MESSAGE(d > -90.0f && d < 90.0f,
+          "declination must be inside (-90, +90)");
+    }
+  }
+}
+
+void test_declination_symmetric_across_pole_longitude(void) {
+  // At the geomagnetic pole's longitude (-72.68°W), declination should be
+  // ~0 (magnetic north lines up with true north when you're on the pole's
+  // meridian). Verifying the sign flips either side of that meridian.
+  const float d_east = magneticDeclinationDeg(40.0f, -60.0f);
+  const float d_west = magneticDeclinationDeg(40.0f, -90.0f);
+  TEST_ASSERT_TRUE_MESSAGE(d_east < 0.0f,
+      "east of pole longitude → magnetic north is west of true → negative");
+  TEST_ASSERT_TRUE_MESSAGE(d_west > 0.0f,
+      "west of pole longitude → magnetic north is east of true → positive");
+}
+
 int main(int /*argc*/, char** /*argv*/) {
   UNITY_BEGIN();
   RUN_TEST(test_distance_zero_for_same_point);
@@ -159,5 +203,8 @@ int main(int /*argc*/, char** /*argv*/) {
   RUN_TEST(test_compass8_cardinals);
   RUN_TEST(test_compass8_rounds_to_nearest_bin);
   RUN_TEST(test_compass8_normalizes_negative_and_wraparound);
+  RUN_TEST(test_declination_bay_area_is_east_positive);
+  RUN_TEST(test_declination_finite_and_bounded);
+  RUN_TEST(test_declination_symmetric_across_pole_longitude);
   return UNITY_END();
 }

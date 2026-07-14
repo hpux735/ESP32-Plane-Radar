@@ -71,6 +71,26 @@ export function bearingDeg(lat1: number, lon1: number, lat2: number, lon2: numbe
   return (brg + 360) % 360;
 }
 
+/** Approximate magnetic declination at (lat, lon) in degrees. Positive =
+ *  East (magnetic north is east of true north). Tilted-dipole model using
+ *  the north geomagnetic pole (~80.65°N, 72.68°W, epoch ~2020). Accuracy
+ *  varies regionally — ~2-5° off in the Americas (dominantly dipolar),
+ *  ~10-15° off over Europe / North Atlantic (non-dipole "European
+ *  anomaly"). Enough for an 8-point compass reading in most of the
+ *  northern hemisphere; not sufficient for navigation. Mirrors
+ *  services::weather::geo::magneticDeclinationDeg on firmware. */
+export function magneticDeclinationDeg(lat: number, lon: number): number {
+  const toRad = Math.PI / 180;
+  const POLE_LAT = 80.65;
+  const POLE_LON = -72.68;
+  const phi = lat * toRad;
+  const phiP = POLE_LAT * toRad;
+  const dLam = (POLE_LON - lon) * toRad;
+  const y = Math.sin(dLam);
+  const x = Math.cos(phi) * Math.tan(phiP) - Math.sin(phi) * Math.cos(dLam);
+  return (Math.atan2(y, x) * 180) / Math.PI;
+}
+
 /** Bin a bearing in degrees to one of 8 compass directions. */
 export function compass8(deg: number): "N" | "NE" | "E" | "SE" | "S" | "SW" | "W" | "NW" {
   const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"] as const;

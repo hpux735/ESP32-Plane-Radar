@@ -165,12 +165,18 @@ void drawReferencePosition(LGFX_Sprite& g) {
     const float apt_lat = static_cast<float>(best.lat_e7) / 1.0e7f;
     const float apt_lon = static_cast<float>(best.lon_e7) / 1.0e7f;
     // Bearing from airport → home reads naturally as "home is X of airport".
-    const float brg = services::weather::geo::bearingDeg(
+    // Reported as MAGNETIC (aviation convention) — subtract the local
+    // declination so pilots don't have to translate between true and mag
+    // in their heads to sanity-check where home is.
+    const float true_brg = services::weather::geo::bearingDeg(
         apt_lat, apt_lon,
         static_cast<float>(home_lat), static_cast<float>(home_lon));
+    const float decl = services::weather::geo::magneticDeclinationDeg(
+        apt_lat, apt_lon);
+    const float mag_brg = std::fmod(true_brg - decl + 360.0f, 360.0f);
     std::snprintf(buf, sizeof(buf), "%.1f nm %s of %s",
                   static_cast<double>(best_dist),
-                  services::weather::geo::compass8(brg),
+                  services::weather::geo::compass8(mag_brg),
                   best.ident);
   }
 

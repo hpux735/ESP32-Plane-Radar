@@ -23,6 +23,17 @@ void makeBbox(float center_lat, float center_lon, float radius_nm,
 // degrees clockwise from true north, normalized to [0, 360).
 float bearingDeg(float lat1, float lon1, float lat2, float lon2);
 
+// Approximate magnetic declination at (lat, lon) in degrees. Positive =
+// East (magnetic north is east of true north). Uses a tilted-dipole model
+// centered on the north geomagnetic pole (epoch ~2020: 80.65°N, 72.68°W).
+// Accuracy varies REGIONALLY — good in the Americas (~2-5° off) where
+// the field is dominantly dipolar, worse over Europe / the Atlantic
+// anomaly (~10-15° off) where higher-order harmonics dominate. Adequate
+// for an 8-point compass reading of "which way is home"; NOT sufficient
+// for navigation. If accuracy elsewhere becomes user-visible, replace
+// with a real WMM / IGRF implementation.
+float magneticDeclinationDeg(float lat, float lon);
+
 // Bin a bearing (deg, any real) to one of 8 compass directions.
 // Returns a pointer to a static string: "N", "NE", "E", "SE", "S",
 // "SW", "W", "NW".

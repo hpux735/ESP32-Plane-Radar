@@ -10,7 +10,7 @@ import { state } from "./state";
 import { cachedReading, type WxReading } from "./outdoorTemp";
 import { lastUpdateMs } from "./weather";
 import { formatFreshness } from "./weatherView";
-import { bearingDeg, compass8 } from "./projection";
+import { bearingDeg, compass8, magneticDeclinationDeg } from "./projection";
 import { nearestIapAirport } from "./airports";
 import type { IndexData } from "./data";
 
@@ -240,10 +240,14 @@ function referencePositionLabel(): string | null {
   if (!nearest) return null;
   if (nearest.distanceNm <= 0.1) return nearest.icao;
   // Bearing FROM the airport TO home reads naturally as "home is X of
-  // airport" — e.g. bearing 350° → home is N of the airport.
-  const brg = bearingDeg(
+  // airport". Reported as MAGNETIC (aviation convention) so pilots don't
+  // need to translate true ↔ mag in their heads. Declination is looked up
+  // at the airport (not at home) for consistency with the firmware side.
+  const trueBrg = bearingDeg(
     nearest.lat, nearest.lon, state.home.lat, state.home.lon);
-  return `${nearest.distanceNm.toFixed(1)} nm ${compass8(brg)} of ${nearest.icao}`;
+  const decl = magneticDeclinationDeg(nearest.lat, nearest.lon);
+  const magBrg = ((trueBrg - decl) % 360 + 360) % 360;
+  return `${nearest.distanceNm.toFixed(1)} nm ${compass8(magBrg)} of ${nearest.icao}`;
 }
 
 function drawReferencePosition(ctx: CanvasRenderingContext2D): void {
