@@ -31,10 +31,14 @@ namespace plane_radar::portal {
 //     "Saved" page, just a green banner and stay put
 //   - auto-populates empty home coords via ipapi.co on first load
 constexpr char kCustomHead[] = R"HTML(<style>
-.pr-sec{margin:22px 0 8px}
-.pr-hdr{font-size:1.05em;font-weight:700;border-bottom:1px solid #ccc;padding-bottom:3px;margin-bottom:4px}
-.pr-hint{color:#666;font-size:.85em;margin-bottom:8px}
-.pr-search{position:relative;margin:4px 0}
+/* WiFiManager's base CSS gives every <div> `padding:5px` + `box-sizing:border-box`
+   and every input/button/select `width:100%`. Custom wrapper divs would compound
+   that padding, making the search box render ~20px narrower than the coord
+   inputs below. Reset the paddings on our structural wrappers so widths line up. */
+.pr-sec{margin:22px 0 8px;padding:0 !important}
+.pr-hdr{font-size:1.05em;font-weight:700;border-bottom:1px solid #ccc;padding:0 0 3px 0 !important;margin-bottom:4px}
+.pr-hint{color:#666;font-size:.85em;padding:0 !important;margin-bottom:8px}
+.pr-search{position:relative;margin:5px 0 !important;padding:0 !important}
 .pr-hits{display:none;position:absolute;left:0;right:0;top:100%;z-index:10;border:1px solid #ccc;border-top:none;max-height:220px;overflow:auto;font-size:.9em;background:#fff;border-radius:0 0 .3rem .3rem;box-shadow:0 3px 10px rgba(0,0,0,.12)}
 .pr-hit{padding:8px 10px;cursor:pointer;border-bottom:1px solid #eee}
 .pr-hit:hover{background:#e8f4fe}
@@ -50,8 +54,11 @@ constexpr char kCustomHead[] = R"HTML(<style>
 .pr-chip-rm{flex:0 0 auto !important;width:auto !important;padding:2px 10px !important;background:#dc3630 !important;color:#fff !important;border:0 !important;border-radius:.3rem !important;cursor:pointer;font-size:1em;line-height:1;margin:0 !important}
 .pr-chip-sub{flex:0 0 100%;width:100%;color:#555;font-size:.8em;padding:0 4px;line-height:1.3;word-break:break-word;margin:0 !important}
 .pr-chip-empty{color:#888;font-style:italic;padding:6px 4px}
-.pr-saved{background:#5cb85c;color:#fff;padding:12px;border-radius:.3rem;margin-bottom:12px;font-weight:700;text-align:center;transition:opacity .5s}
-.pr-error{background:#dc3630;color:#fff;padding:12px;border-radius:.3rem;margin-bottom:12px;font-weight:700;text-align:center}
+.pr-saved{background:#5cb85c;color:#fff;padding:12px !important;border-radius:.3rem;margin-bottom:12px;font-weight:700;text-align:center;transition:opacity .5s}
+.pr-error{background:#dc3630;color:#fff;padding:12px !important;border-radius:.3rem;margin-bottom:12px;font-weight:700;text-align:center}
+/* Sticky Save button — mirrors the web app so the user doesn't have to
+   scroll to the bottom of a long settings form to commit changes. */
+form button[type=submit]{position:sticky !important;bottom:0 !important;z-index:5;box-shadow:0 -2px 10px rgba(0,0,0,.08)}
 body.invert .pr-chip{background:#282828;border-color:#555}
 body.invert .pr-chip-sub{color:#aaa}
 body.invert .pr-hits{background:#282828;border-color:#555}
@@ -85,10 +92,14 @@ function apSearch(idx,q){
   for(var i=0;i<idx.length&&out.length<8;i++){
     var r=idx[i],ic=(r[0]||"").toLowerCase(),ia=(r[1]||"").toLowerCase(),ci=(r[2]||"").toLowerCase();
     var hit=ic===q||ia===q||ic.indexOf(q)===0||ia.indexOf(q)===0||ci.indexOf(q)===0||ci.indexOf(q)>=0;
+    // Ported from the web app: airports with a scheduled-service IATA code
+    // default to 10 nm (busy airline traffic — wider view); GA-only fields
+    // without IATA default to 5 nm (tight local pattern).
     if(hit) out.push({
       label:(r[1]?r[1]+" · ":"")+r[0]+" — "+r[2],
       lat:r[3],lon:r[4],
       chipName:r[0],   // ICAO — canonical 4-letter airport id
+      defaultRangeIdx:r[1]?1:0,
       subtitle:""
     });
   }
@@ -264,7 +275,7 @@ function decorateFocusEditor(field){
           name:String(r.chipName).slice(0,15),
           lat:+Number(r.lat).toFixed(6),
           lon:+Number(r.lon).toFixed(6),
-          range_idx:1,
+          range_idx:(typeof r.defaultRangeIdx==="number")?r.defaultRangeIdx:1,
           _sub:r.subtitle||""
         });
         input.value="";hits.style.display="none";draw();ser();
@@ -324,6 +335,14 @@ function updateBranding(){
   document.title=captive?"Plane Radar — Setup":"Plane Radar";
   var h1=document.querySelector("h1");
   if(h1) h1.textContent=captive?"Plane Radar Setup":"Plane Radar";
+  // Root menu (/) button relabels — WiFiManager's stock labels are terse and
+  // don't say "Plane Radar" anywhere. Match the button to what it opens.
+  document.querySelectorAll("form").forEach(function(f){
+    var a=f.getAttribute("action")||"";
+    var btn=f.querySelector("button");
+    if(!btn) return;
+    if(a.indexOf("/param")>=0 && btn.textContent.trim()==="Setup") btn.textContent="Plane Radar Setup";
+  });
 }
 
 function init(){
