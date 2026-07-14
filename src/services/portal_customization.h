@@ -322,10 +322,27 @@ function interceptSave(){
     data.forEach(function(v,k){body.append(k,v);});
     fetch(form.action,{method:"POST",body:body,headers:{"Content-Type":"application/x-www-form-urlencoded"}})
       .then(function(r){
-        if(r.ok||r.status===200||r.status===302) showBanner("pr-saved","Saved ✓");
-        else showBanner("pr-error","Save failed — "+r.status);
+        if(r.ok||r.status===200||r.status===302){
+          // Device auto-restarts after saving so new focus / home coords
+          // pick up their tiles via the boot-time sync fetch. Show a
+          // second banner + auto-reload the page once the device is back
+          // (roughly 8-10 s: reboot + Wi-Fi rejoin + LAN portal restart).
+          showBanner("pr-saved","Saved ✓ — device restarting");
+          setTimeout(function(){
+            showBanner("pr-saved","Reconnecting…");
+            setTimeout(function(){window.location.href="/param";},4000);
+          },4000);
+        }else showBanner("pr-error","Save failed — "+r.status);
       })
-      .catch(function(){showBanner("pr-error","Save failed — network error");})
+      .catch(function(){
+        // A dropped connection immediately after POST is EXPECTED — the
+        // device rebooted while our fetch was in flight. Still success.
+        showBanner("pr-saved","Saved ✓ — device restarting");
+        setTimeout(function(){
+          showBanner("pr-saved","Reconnecting…");
+          setTimeout(function(){window.location.href="/param";},4000);
+        },4000);
+      })
       .finally(function(){if(btn) btn.disabled=false;});
   });
 }

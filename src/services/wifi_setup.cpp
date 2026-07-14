@@ -29,7 +29,12 @@
 #include "ui/status_screens.h"
 
 portMUX_TYPE s_boot_mux = portMUX_INITIALIZER_UNLOCKED;
-volatile bool s_boot_tap_pending = false;
+// Counter, NOT bool: if two taps happen inside the same main-loop tick
+// (very possible when a fetch stalls loop for a couple hundred ms), a
+// bool would swallow the second tap and the double-tap classifier
+// would only see one — dispatched as Single. Counter preserves each
+// hardware-detected tap edge; consumer decrements one at a time.
+volatile uint8_t s_boot_tap_pending = 0;
 volatile bool s_boot_is_down = false;
 volatile unsigned long s_boot_down_ms = 0;
 bool s_long_press_handled = false;
@@ -45,7 +50,8 @@ void IRAM_ATTR onBootButtonIsr() {
   } else if (s_boot_is_down) {
     const unsigned long held = now - s_boot_down_ms;
     if (held >= config::kBootTapMinMs && held < config::kBootResetHoldMs) {
-      s_boot_tap_pending = true;
+      // Cap at 3 — anything more and the classifier discards anyway.
+      if (s_boot_tap_pending < 3) ++s_boot_tap_pending;
     }
     s_boot_is_down = false;
   }
@@ -212,6 +218,15 @@ void onPortalParamsSaved() {
   apply(s_param_lyr_land,  ui::layers::Layer::Land);
   apply(s_param_lyr_rwlg,  ui::layers::Layer::RunwaysLarge);
   apply(s_param_lyr_tags,  ui::layers::Layer::AircraftTags);
+  // Live-apply of focus_ring / home coord changes doesn't reliably trigger
+  // a runtime tile fetch — the LAN-portal WebServer + WiFi + sprite +
+  // mbedTLS peak leaves the heap too tight for a mid-runtime 27 KB tile
+  // buffer to find contiguous room. Rebooting drops back into setup() with
+  // fresh heap, where the boot-time synchronous tile fetch grabs the new
+  // home tile cleanly before the sprite is allocated.
+  Serial.println("portal: saved, restarting to apply new tiles");
+  delay(1200);  // let the /paramsave HTTP response flush to the browser
+  esp_restart();
 }
 
 // LAN-only params. The captive portal deliberately shows just Wi-Fi so the
@@ -549,10 +564,8 @@ void bootButtonInit() { initBootButton(); }
 
 bool bootButtonConsumeTap() {
   portENTER_CRITICAL(&s_boot_mux);
-  const bool tap = s_boot_tap_pending;
-  if (tap) {
-    s_boot_tap_pending = false;
-  }
+  const bool tap = s_boot_tap_pending > 0;
+  if (tap) --s_boot_tap_pending;
   portEXIT_CRITICAL(&s_boot_mux);
   return tap;
 }
@@ -574,10 +587,13 @@ BootTap bootButtonConsumeEvent() {
   if (services::tap_sensor::consumeDoubleTap()) return BootTap::Double;
   if (services::tap_sensor::consumeSingleTap()) return BootTap::Single;
 
-  // BOOT-button path: count taps in a 250 ms window. Kept as a fallback
-  // for developers who open the case, or for hardware without the
-  // accelerometer wired in.
-  constexpr unsigned long kMultiTapWindowMs = 250;
+  // BOOT-button path: count taps in a 500 ms window. Started at 250 ms
+  // (kept perceptual delay on single-tap tight), but users' natural
+  // double-tap rhythm on a small tactile button is closer to 300-450 ms
+  // — half of double-taps were being dispatched as two singles at 250.
+  // 500 ms matches OS double-click defaults, still tight enough that a
+  // single tap doesn't feel laggy.
+  constexpr unsigned long kMultiTapWindowMs = 500;
   static uint8_t s_pending_count = 0;
   static unsigned long s_last_tap_ms = 0;
 
