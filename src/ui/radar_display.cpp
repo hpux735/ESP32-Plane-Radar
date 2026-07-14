@@ -470,16 +470,22 @@ struct TagContent {
 constexpr int kEmergencyGap = 2;
 inline int emGlyphWidth() { return s_draw->textWidth("EM"); }
 
-TagContent buildTagContent(const services::adsb::Aircraft& p, bool show_alt) {
+TagContent buildTagContent(const services::adsb::Aircraft& p,
+                           bool /*show_alt_unused*/) {
   TagContent c{};
   c.line1 = p.callsign[0] != '\0' ? p.callsign : "";
   c.draw_trend = false;
   c.emergency = isEmergency(p.squawk);
-  if (show_alt) {
+  // Altitude is the fundamental thing you want to know about a plane. Always
+  // show it when known; fall back to aircraft type only when altitude data is
+  // missing. (The previous 3-second altitude/type toggle was confusing —
+  // half the time you'd look up and see "B738" and think "where's the
+  // altitude?".)
+  if (p.alt_ft != INT32_MIN) {
     c.line2_is_alt = true;
     c.line2_color = radar::kColorTagAltitude;
     formatAltitudeShort(p.alt_ft, c.line2, sizeof(c.line2));
-    if (p.alt_ft != INT32_MIN && showTrend(p.vs_fpm)) {
+    if (showTrend(p.vs_fpm)) {
       c.draw_trend = true;
       c.trend_up = p.vs_fpm > 0;
     }
@@ -487,15 +493,6 @@ TagContent buildTagContent(const services::adsb::Aircraft& p, bool show_alt) {
     c.line2_is_alt = false;
     c.line2_color = radar::kColorTagType;
     std::snprintf(c.line2, sizeof(c.line2), "%s", p.type);
-  } else {
-    // No type — fall back to altitude so we don't drop line 2 entirely.
-    c.line2_is_alt = true;
-    c.line2_color = radar::kColorTagAltitude;
-    formatAltitudeShort(p.alt_ft, c.line2, sizeof(c.line2));
-    if (p.alt_ft != INT32_MIN && showTrend(p.vs_fpm)) {
-      c.draw_trend = true;
-      c.trend_up = p.vs_fpm > 0;
-    }
   }
   return c;
 }
@@ -1033,7 +1030,6 @@ void drawAircraft() {
   }
 
   gcTagMemory();
-  const bool show_alt = tagShowsAltitude();
   // Emergency aircraft (score bumped by 1e9 in clarityScore) always tag
   // regardless of budget. Count them separately so a bunch of emergency
   // squawks can't eat everyone's slot; base budget still applies to normal
@@ -1050,7 +1046,7 @@ void drawAircraft() {
   for (size_t k = 0; k < tag_limit; ++k) {
     const size_t d = scored[k].d;
     const size_t i = items[d].index;
-    TagContent content = buildTagContent(planes[i], show_alt);
+    TagContent content = buildTagContent(planes[i], /*unused=*/true);
     TagPlacement tp;
     if (pickTagPlacement(planes[i], items[d].x, items[d].y, pred_x[d],
                          pred_y[d], content, &tp)) {
@@ -1262,7 +1258,13 @@ bool ensureFrameSprite() {
   if (s_frame_ready) {
     return true;
   }
-  s_frame.setColorDepth(16);
+  // 8bpp palette mode: 240x240 sprite = ~57 KB instead of ~115 KB at 16bpp.
+  // The ESP32-C3 SuperMini has no PSRAM and only ~80 KB free heap at
+  // steady state (WiFi + HTTPClient + TLS + ArduinoJson eat the rest), so
+  // 16bpp allocation reliably fails and drops us into the direct-to-panel
+  // fallback — the visible ~5 s clear/redraw flicker on every ADS-B fetch.
+  // The radar palette is <32 distinct colors, so 8bpp is lossless for us.
+  s_frame.setColorDepth(8);
   if (!s_frame.createSprite(radar::kSize, radar::kSize)) {
     Serial.println("radar: frame sprite alloc failed");
     return false;
