@@ -402,6 +402,8 @@ void draw() {
   g.fillArc(radar::kCenterX, radar::kCenterY, radar::kSize + 8, 120, 0, 360,
             radar::kColorBackground);
   g.pushSprite(0, 0);
+  // Release tile buffer — cockpit's reference-position marker reads the tile.
+  data::tile::store().endRender();
 }
 
 }  // namespace ui::cockpit

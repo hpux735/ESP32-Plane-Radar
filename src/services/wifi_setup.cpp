@@ -1,5 +1,6 @@
 #include "services/wifi_setup.h"
 
+#include "services/adsb_client.h"
 #include "services/portal_customization.h"
 
 #include "ui/layer_style.h"
@@ -415,6 +416,39 @@ void ensureWifiManager() {
       s_wm.server->send_P(200, "application/javascript",
                           plane_radar::portal::kCustomJs,
                           sizeof(plane_radar::portal::kCustomJs) - 1);
+    });
+    // GET /dbg — read-only diagnostic snapshot in JSON. Exposes the numbers
+    // we don't otherwise have visibility into: largest-allocatable heap
+    // block (mbedTLS handshake needs ~32 KB CONTIGUOUS, not just total
+    // free), lifetime min free heap (catches transient spikes we'd miss
+    // by sampling), ADS-B fetch counter (are fetches actually running?),
+    // ms since last successful update (how long has the display been
+    // stale?). Small enough to fit in a single tcp send — no String
+    // growth concerns.
+    s_wm.server->on("/dbg", []() {
+      char buf[320];
+      const unsigned long since_update =
+          services::adsb::lastUpdateMs() == 0
+              ? 0
+              : millis() - services::adsb::lastUpdateMs();
+      const int n = snprintf(
+          buf, sizeof(buf),
+          "{\"free_heap\":%u,\"max_alloc_heap\":%u,"
+          "\"min_free_heap_ever\":%u,\"heap_size\":%u,"
+          "\"adsb_fetch_count\":%lu,\"adsb_last_update_ms\":%lu,"
+          "\"adsb_ms_since_update\":%lu,\"adsb_aircraft\":%u,"
+          "\"uptime_ms\":%lu}\n",
+          static_cast<unsigned>(ESP.getFreeHeap()),
+          static_cast<unsigned>(ESP.getMaxAllocHeap()),
+          static_cast<unsigned>(ESP.getMinFreeHeap()),
+          static_cast<unsigned>(ESP.getHeapSize()),
+          services::adsb::fetchCount(),
+          services::adsb::lastUpdateMs(),
+          since_update,
+          static_cast<unsigned>(services::adsb::aircraftCount()),
+          millis());
+      (void)n;
+      s_wm.server->send(200, "application/json", buf);
     });
     // POST /reset-settings — wipes every settings-related NVS namespace
     // (home, METAR, focus ring, range/runways, layers) and reboots. Leaves

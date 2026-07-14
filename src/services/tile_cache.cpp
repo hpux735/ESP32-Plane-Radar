@@ -57,27 +57,10 @@ void mountAndHydrate() {
   Serial.printf("tile_cache: SPIFFS mounted (%u used of %u total bytes)\n",
                  static_cast<unsigned>(SPIFFS.usedBytes()),
                  static_cast<unsigned>(SPIFFS.totalBytes()));
-  fs::File root = SPIFFS.open("/");
-  if (!root || !root.isDirectory()) return;
-  int loaded = 0;
-  for (fs::File f = root.openNextFile(); f; f = root.openNextFile()) {
-    const char* name = f.name();
-    uint8_t z = 0;
-    uint16_t x = 0, y = 0;
-    if (!parseFilename(name, &z, &x, &y)) continue;
-    const size_t size = f.size();
-    if (size == 0 || size > kMaxTileBytes) continue;
-    uint8_t* buf = static_cast<uint8_t*>(std::malloc(size));
-    if (buf == nullptr) continue;
-    if (f.read(buf, size) == size) {
-      // putOwning takes ownership; frees on failure. Kills the boot-time
-      // double-copy that used to double heap pressure per tile file.
-      if (data::tile::store().putOwning(z, x, y, buf, size)) ++loaded;
-    } else {
-      std::free(buf);
-    }
-  }
-  Serial.printf("tile_cache: hydrated %d tile(s) from SPIFFS\n", loaded);
+  // Deliberately NOT pre-loading tiles into RAM here — the tile store now
+  // loads from SPIFFS on-demand at the first get() of each render and
+  // frees on endRender(). Boot-time hydration would just be wasted
+  // heap work that immediately gets freed by the first endRender().
 }
 
 bool persist(uint8_t z, uint16_t x, uint16_t y,

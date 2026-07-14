@@ -506,6 +506,8 @@ void draw() {
   gfx.fillArc(radar::kCenterX, radar::kCenterY, radar::kSize + 8, 120, 0, 360,
               radar::kColorBackground);
   if (sp) sp->pushSprite(0, 0);
+  // Release tile buffer — weather draws Land/Coast from the tile too.
+  data::tile::store().endRender();
 }
 
 }  // namespace ui::weather

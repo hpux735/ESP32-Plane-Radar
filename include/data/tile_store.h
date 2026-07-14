@@ -82,6 +82,16 @@ class TileStore {
   // Clear the RAM cache (fallback remains). Test-only convenience.
   void clear();
 
+  // Release any cached tile buffers back to the heap. Call at the end of a
+  // render pass — the tile is only needed during the coast / land / water /
+  // airport draw sequence (~50 ms) and holding it persistently costs ~32 KB
+  // that the ADS-B fetch's mbedTLS handshake otherwise can't get contiguous.
+  // On next get() the tile is re-read from SPIFFS into a fresh malloc.
+  //
+  // Same as clear() but named for intent so future call-site edits don't
+  // rename this to something that sounds test-only.
+  void endRender();
+
  private:
   struct Entry {
     bool used;

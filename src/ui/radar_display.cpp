@@ -7,6 +7,7 @@
 #include <cstdlib>
 
 #include "config.h"
+#include "data/tile_store.h"
 #include "hardware/display.h"
 #include "hardware/display_font.h"
 #include "services/adsb_client.h"
@@ -1304,6 +1305,12 @@ void renderFrame() {
   applyBezelMask(s_frame);
   s_frame.pushSprite(0, 0);
   tft.setTextDatum(textdatum_t::top_left);
+  // Release the tile buffer we loaded (via SPIFFS) at the top of this
+  // frame — coast / land / water / airport overlays are the only readers
+  // and they're all above us in the call stack. Holding ~32 KB across
+  // the 3-second ADS-B fetch cycle starves the mbedTLS handshake of a
+  // contiguous heap block.
+  data::tile::store().endRender();
 }
 
 }  // namespace
@@ -1323,6 +1330,7 @@ void radarDisplayDraw() {
   drawAircraft();
   applyBezelMask(tft);
   tft.setTextDatum(textdatum_t::top_left);
+  data::tile::store().endRender();
 }
 
 void radarDisplayRefreshAircraft() {

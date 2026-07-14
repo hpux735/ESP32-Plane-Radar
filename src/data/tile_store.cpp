@@ -1,11 +1,50 @@
 #include "data/tile_store.h"
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
 #include "data/fallback_tile.h"
 
+#ifndef USE_NATIVE
+#include <SPIFFS.h>
+#endif
+
 namespace data::tile {
+
+namespace {
+
+// Read /tile_z_x_y.bin from SPIFFS into a freshly-malloc'd buffer. Returns
+// nullptr on any failure (file missing, alloc failed, short read). Caller
+// owns the returned buffer.
+//
+// Kept private to tile_store to avoid a circular include with tile_cache
+// (tile_cache already depends on tile_store for hydration writes; the
+// tiny amount of duplication here is cheaper than untangling that).
+#ifndef USE_NATIVE
+uint8_t* readTileFromSpiffs(uint8_t z, uint16_t x, uint16_t y,
+                             size_t* out_size) {
+  char path[32];
+  const int n = std::snprintf(path, sizeof(path), "/tile_%u_%u_%u.bin",
+                                static_cast<unsigned>(z),
+                                static_cast<unsigned>(x),
+                                static_cast<unsigned>(y));
+  if (n <= 0 || static_cast<size_t>(n) >= sizeof(path)) return nullptr;
+  fs::File f = SPIFFS.open(path, "r");
+  if (!f) return nullptr;
+  const size_t size = f.size();
+  if (size == 0 || size > 128 * 1024) { f.close(); return nullptr; }
+  uint8_t* buf = static_cast<uint8_t*>(std::malloc(size));
+  if (buf == nullptr) { f.close(); return nullptr; }
+  const size_t read = f.read(buf, size);
+  f.close();
+  if (read != size) { std::free(buf); return nullptr; }
+  *out_size = size;
+  return buf;
+}
+#endif
+
+}  // namespace
 
 TileStore& store() {
   static TileStore s_instance;
@@ -57,6 +96,21 @@ TileBytes TileStore::get(uint8_t z, uint16_t x, uint16_t y) {
     entries_[idx].last_used_tick = ++tick_;
     return TileBytes{entries_[idx].buffer, entries_[idx].size, false};
   }
+#ifndef USE_NATIVE
+  // Cache miss — try SPIFFS. This is the mechanism that makes endRender()
+  // safe to call every frame: the tile disappears from RAM between
+  // renders but the next get() re-loads it in ~20 ms.
+  size_t size = 0;
+  uint8_t* buf = readTileFromSpiffs(z, x, y, &size);
+  if (buf != nullptr) {
+    // putOwning takes the buffer and caches it under (z,x,y). If it
+    // fails (only pre-condition failures, never OOM here since the
+    // buffer is already allocated), it frees `buf` itself.
+    if (putOwning(z, x, y, buf, size)) {
+      return TileBytes{entries_[findEntry(z, x, y)].buffer, size, false};
+    }
+  }
+#endif
   return TileBytes{kFallbackTile, kFallbackTileSize, true};
 }
 
@@ -147,6 +201,21 @@ void TileStore::clear() {
     e.size = 0;
   }
   tick_ = 0;
+}
+
+void TileStore::endRender() {
+  // Same mechanics as clear() but semantically distinct: this fires every
+  // render frame, whereas clear() was only meant for test teardown. Leaving
+  // the tick counter alone so a follow-up put() still gets a monotonically
+  // increasing tick if the caller repopulates.
+  for (auto& e : entries_) {
+    if (e.buffer != nullptr) {
+      std::free(e.buffer);
+      e.buffer = nullptr;
+    }
+    e.used = false;
+    e.size = 0;
+  }
 }
 
 }  // namespace data::tile
