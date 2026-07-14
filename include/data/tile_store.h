@@ -20,6 +20,23 @@
 
 namespace data::tile {
 
+// Max sane on-wire tile size. Enforced by fetch (rejects oversized HTTP
+// responses) and by cache-persist (rejects oversized writes to SPIFFS).
+// z=3 tiles cap ~150 KB; z=7 stays under 40 KB. 128 KB leaves headroom
+// without letting a bad server response blow the heap. One authoritative
+// definition so fetch + cache stay in sync when the ceiling ever moves.
+constexpr size_t kMaxTileBytes = 128 * 1024;
+
+// Native emulator only: install the bootstrap tile bytes so the on-native
+// `TileStore::get()` cache-miss path can return them, mirroring how the
+// firmware re-reads from SPIFFS on cache miss. The store's endRender()
+// frees the RAM cache every frame; without this hook the emulator would
+// render only the flash fallback tile from frame 2 onward. Caller owns
+// the buffer and MUST keep it alive for the lifetime of the process
+// (static or leaked). Passing (0,0,0,nullptr,0) clears the bootstrap.
+void setHostBootstrapBuffer(uint8_t z, uint16_t x, uint16_t y,
+                             const uint8_t* data, size_t size);
+
 // Cache capacity. Shrunk from 4 to 1 slot: the 4-slot design was eating
 // 90-160 KB of heap (`put` mallocs per-tile at tile_store.cpp:88,
 // hydrated from every SPIFFS file at boot in tile_cache.cpp:52-78,

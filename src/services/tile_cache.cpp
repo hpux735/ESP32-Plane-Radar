@@ -12,11 +12,7 @@
 
 namespace services::tile_cache {
 
-namespace {
-
-constexpr size_t kMaxTileBytes = 128 * 1024;  // sanity cap; z=3 tiles cap ~150 KB, z=7 stays under 40 KB
-
-}  // namespace
+using data::tile::kMaxTileBytes;
 
 size_t filenameFor(uint8_t z, uint16_t x, uint16_t y, char* out, size_t out_len) {
   // Flat SPIFFS layout: /tile_<z>_<x>_<y>.bin

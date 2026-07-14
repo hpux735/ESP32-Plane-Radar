@@ -294,17 +294,18 @@ void loadBootstrapTiles() {
     std::printf("host: bootstrap tile %s has implausible size %ld\n", path, size);
     return;
   }
-  std::vector<uint8_t> buf(static_cast<size_t>(size));
+  // Static so the pointer we hand to setHostBootstrapBuffer outlives this
+  // function. TileStore::get() reads directly from this buffer on cache
+  // miss for the life of the process — it must NOT be a stack local.
+  static std::vector<uint8_t> buf;
+  buf.resize(static_cast<size_t>(size));
   const size_t n = std::fread(buf.data(), 1, buf.size(), f);
   std::fclose(f);
   if (n != buf.size()) {
     std::printf("host: bootstrap tile read short (%zu of %zu)\n", n, buf.size());
     return;
   }
-  if (!data::tile::store().put(7, 20, 37, buf.data(), buf.size())) {
-    std::printf("host: TileStore.put(7,20,37) failed for bootstrap tile\n");
-    return;
-  }
+  data::tile::setHostBootstrapBuffer(7, 20, 37, buf.data(), buf.size());
   std::printf("host: loaded bootstrap tile (7,20,37) — %zu bytes\n", buf.size());
 }
 

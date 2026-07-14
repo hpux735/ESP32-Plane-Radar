@@ -156,6 +156,31 @@ void test_put_reject_null_or_zero(void) {
   TEST_ASSERT_EQUAL_UINT32(0, s.cachedCount());
 }
 
+// The native bootstrap-tile hook is what makes endRender() every frame safe
+// on the SDL emulator: the tile leaves the RAM cache but stays reachable
+// via a static buffer host_stubs registered at boot. Regressing this makes
+// the emulator render only the flash outlines from frame 2 onward.
+void test_native_bootstrap_survives_endRender(void) {
+  data::tile::setHostBootstrapBuffer(7, 20, 37, kTileA, sizeof(kTileA));
+  data::tile::TileStore s;
+  auto b1 = s.get(7, 20, 37);
+  TEST_ASSERT_FALSE(b1.is_fallback);
+  TEST_ASSERT_EQUAL_MEMORY(kTileA, b1.data, sizeof(kTileA));
+  s.endRender();
+  auto b2 = s.get(7, 20, 37);
+  TEST_ASSERT_FALSE(b2.is_fallback);
+  TEST_ASSERT_EQUAL_MEMORY(kTileA, b2.data, sizeof(kTileA));
+  data::tile::setHostBootstrapBuffer(0, 0, 0, nullptr, 0);  // clear
+}
+
+void test_native_bootstrap_wrong_key_falls_back(void) {
+  data::tile::setHostBootstrapBuffer(7, 20, 37, kTileA, sizeof(kTileA));
+  data::tile::TileStore s;
+  auto b = s.get(7, 20, 38);
+  TEST_ASSERT_TRUE(b.is_fallback);
+  data::tile::setHostBootstrapBuffer(0, 0, 0, nullptr, 0);  // clear
+}
+
 int main(int /*argc*/, char** /*argv*/) {
   UNITY_BEGIN();
   RUN_TEST(test_get_on_empty_cache_returns_fallback);
@@ -168,5 +193,7 @@ int main(int /*argc*/, char** /*argv*/) {
   RUN_TEST(test_putOwning_takes_ownership_no_memcpy);
   RUN_TEST(test_putOwning_frees_buf_on_precondition_failure);
   RUN_TEST(test_put_reject_null_or_zero);
+  RUN_TEST(test_native_bootstrap_survives_endRender);
+  RUN_TEST(test_native_bootstrap_wrong_key_falls_back);
   return UNITY_END();
 }

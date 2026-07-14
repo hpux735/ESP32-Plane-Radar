@@ -27,7 +27,7 @@ constexpr const char* kTileHostAndPath = "https://radar.benyaffe.com/data/tiles"
 // so the timeout hurts less than ADS-B, but same reasoning: blocking
 // loop() longer than a couple seconds makes the button feel dead.
 constexpr unsigned long kFetchTimeoutMs = 3000;
-constexpr size_t kMaxTileBytes = 128 * 1024;  // matches services::tile_cache
+using data::tile::kMaxTileBytes;
 
 // State: last successful fetch key. Guarded by shouldFetch().
 bool s_have_last = false;

@@ -14,6 +14,20 @@ namespace data::tile {
 
 namespace {
 
+#ifdef USE_NATIVE
+// Native bootstrap: host_stubs loads a pre-baked tile from disk at boot
+// and installs it here. TileStore::get() consults these on cache miss,
+// mirroring the SPIFFS re-read path on ESP32 so endRender() every frame
+// is safe. Caller owns the buffer (host_stubs holds it in a `static`
+// vector so the pointer stays valid).
+bool     s_host_bootstrap_set = false;
+uint8_t  s_host_bootstrap_z   = 0;
+uint16_t s_host_bootstrap_x   = 0;
+uint16_t s_host_bootstrap_y   = 0;
+const uint8_t* s_host_bootstrap_data = nullptr;
+size_t   s_host_bootstrap_size = 0;
+#endif
+
 // Read /tile_z_x_y.bin from SPIFFS into a freshly-malloc'd buffer. Returns
 // nullptr on any failure (file missing, alloc failed, short read). Caller
 // owns the returned buffer.
@@ -109,6 +123,18 @@ TileBytes TileStore::get(uint8_t z, uint16_t x, uint16_t y) {
     if (putOwning(z, x, y, buf, size)) {
       return TileBytes{entries_[findEntry(z, x, y)].buffer, size, false};
     }
+  }
+#else
+  // Native emulator: cache miss falls back to the bootstrap tile if the
+  // key matches. Symmetric to the ESP32's SPIFFS re-read above — without
+  // this, endRender() frees the tile after the first frame and every
+  // subsequent frame renders only the flash fallback outlines.
+  if (s_host_bootstrap_set &&
+      z == s_host_bootstrap_z &&
+      x == s_host_bootstrap_x &&
+      y == s_host_bootstrap_y &&
+      s_host_bootstrap_data != nullptr) {
+    return TileBytes{s_host_bootstrap_data, s_host_bootstrap_size, false};
   }
 #endif
   return TileBytes{kFallbackTile, kFallbackTileSize, true};
@@ -217,5 +243,23 @@ void TileStore::endRender() {
     e.size = 0;
   }
 }
+
+#ifdef USE_NATIVE
+void setHostBootstrapBuffer(uint8_t z, uint16_t x, uint16_t y,
+                             const uint8_t* data, size_t size) {
+  if (data == nullptr || size == 0) {
+    s_host_bootstrap_set = false;
+    s_host_bootstrap_data = nullptr;
+    s_host_bootstrap_size = 0;
+    return;
+  }
+  s_host_bootstrap_z = z;
+  s_host_bootstrap_x = x;
+  s_host_bootstrap_y = y;
+  s_host_bootstrap_data = data;
+  s_host_bootstrap_size = size;
+  s_host_bootstrap_set = true;
+}
+#endif
 
 }  // namespace data::tile
