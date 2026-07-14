@@ -77,8 +77,11 @@ void test_ring_entries_with_out_of_range_coords_are_skipped(void) {
 }
 
 void test_ring_size_is_capped(void) {
-  // Build a JSON array with 20 entries — the ring cap is 16 (kMaxRingSize)
-  // including Home, so we should end up with exactly 16.
+  // Build a JSON array with 20 entries. The effective cap is
+  // 1 + config::kMaxFocusAirports (Home + user-editable airports), so we
+  // should end up with exactly that many even if the JSON contains more.
+  // kMaxRingSize=16 in focus_points.cpp is a hard buffer size; the
+  // soft cap fires first, so we never test-drive the buffer.
   std::string big = "[";
   for (int i = 0; i < 20; ++i) {
     if (i) big += ",";
@@ -89,7 +92,8 @@ void test_ring_size_is_capped(void) {
   big += "]";
   fp::saveRingJson(big.c_str());
   fp::init();
-  TEST_ASSERT_EQUAL_UINT(16, fp::count());
+  // Home + 6 airports = 7.
+  TEST_ASSERT_EQUAL_UINT(7, fp::count());
 }
 
 // ---- setIndex + persistence ----------------------------------------

@@ -28,6 +28,11 @@ const LAYERS: LayerDef[] = [
 
 const RANGE_LABELS = ["5nm", "10nm", "15nm", "25nm"];
 
+// Must match config::kMaxFocusAirports in include/config.h and MAX_AIRPORTS
+// in the LAN portal customization JS. Home occupies slot 0 of the rows
+// table, so a full ring is MAX_FOCUS_AIRPORTS + 1 = 7 rows.
+const MAX_FOCUS_AIRPORTS = 6;
+
 function inject(): { dialog: HTMLDialogElement; openBtn: HTMLButtonElement } {
   const openBtn = document.createElement("button");
   openBtn.type = "button";
@@ -436,14 +441,35 @@ export function mountSettings(airportIndex: AirportIndexRow[]): void {
   openBtn.addEventListener("click", () => {
     populate(form);
     rewireAllRows();
+    updateFocusCap();
     dialog.showModal();
   });
 
   dialog.querySelector(".settings-close")!.addEventListener("click", () => dialog.close());
   dialog.querySelector(".settings-cancel")!.addEventListener("click", () => dialog.close());
 
-  dialog.querySelector(".focus-add")!.addEventListener("click", () => {
+  const focusAddBtn = dialog.querySelector<HTMLButtonElement>(".focus-add")!;
+  const focusCapHint = document.createElement("p");
+  focusCapHint.className = "hint";
+  focusCapHint.style.marginTop = "4px";
+  focusCapHint.style.display = "none";
+  focusCapHint.textContent = `Max ${MAX_FOCUS_AIRPORTS} focus airports — remove one to add another.`;
+  focusAddBtn.insertAdjacentElement("afterend", focusCapHint);
+
+  function updateFocusCap(): void {
+    const airportCount = readFocusRows(tbody).filter(r => !r.isHome).length;
+    const atCap = airportCount >= MAX_FOCUS_AIRPORTS;
+    focusAddBtn.disabled = atCap;
+    focusCapHint.style.display = atCap ? "block" : "none";
+  }
+
+  focusAddBtn.addEventListener("click", () => {
     const rows = readFocusRows(tbody);
+    const airportCount = rows.filter(r => !r.isHome).length;
+    if (airportCount >= MAX_FOCUS_AIRPORTS) {
+      updateFocusCap();
+      return;
+    }
     rows.push({
       label: "",
       lat: state.home.lat,
@@ -453,13 +479,17 @@ export function mountSettings(airportIndex: AirportIndexRow[]): void {
     });
     renderFocusRows(tbody, rows);
     rewireAllRows();
+    updateFocusCap();
   });
 
   tbody.addEventListener("click", (e) => {
     const target = e.target as HTMLElement;
     if (!target.classList.contains("fp-remove")) return;
     const tr = target.closest("tr");
-    if (tr) tr.remove();
+    if (tr) {
+      tr.remove();
+      updateFocusCap();
+    }
   });
 
   dialog.querySelector(".settings-reset")!.addEventListener("click", () => {

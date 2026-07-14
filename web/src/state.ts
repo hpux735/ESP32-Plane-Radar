@@ -329,6 +329,12 @@ export function saveMetar(metar: MetarConfig): void {
   notify();
 }
 
+// Safety net that mirrors config::kMaxFocusAirports on the firmware side
+// and MAX_FOCUS_AIRPORTS in settings.ts. The settings UI already prevents
+// the user from adding a 7th airport; if a stale payload / hand-edited
+// localStorage slips past the UI cap, truncate rather than persist it.
+const MAX_FOCUS_AIRPORTS = 6;
+
 export function saveFocusRing(ring: FocusPoint[]): void {
   // Guard: keep at least one home slot at index 0.
   const cleaned = ring.slice();
@@ -340,6 +346,9 @@ export function saveFocusRing(ring: FocusPoint[]): void {
   }
   cleaned[0].lat = state.home.lat;
   cleaned[0].lon = state.home.lon;
+  if (cleaned.length > 1 + MAX_FOCUS_AIRPORTS) {
+    cleaned.length = 1 + MAX_FOCUS_AIRPORTS;
+  }
   state.focusRing = cleaned;
   if (state.focusIdx >= cleaned.length) state.focusIdx = 0;
   window.localStorage.setItem(LS_KEYS.focus, JSON.stringify(cleaned));

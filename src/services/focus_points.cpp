@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstring>
 
+#include "config.h"
 #include "services/radar_location.h"
 #include "ui/radar_range.h"
 
@@ -64,7 +65,8 @@ void seedHomeSlot() {
 }
 
 void appendBakedFallback() {
-  for (size_t i = 0; i < kFallbackCount && s_ring_count < kMaxRingSize; ++i) {
+  const size_t soft_cap = 1 + config::kMaxFocusAirports;
+  for (size_t i = 0; i < kFallbackCount && s_ring_count < soft_cap; ++i) {
     FocusPoint& fp = s_ring[s_ring_count++];
     setName(fp, kFallbackAirports[i].name);
     fp.lat = kFallbackAirports[i].lat;
@@ -89,8 +91,14 @@ bool tryAppendFromJson(const String& json) {
     return false;
   }
   const size_t before = s_ring_count;
+  const size_t soft_cap = 1 + config::kMaxFocusAirports;
   for (JsonObject entry : doc.as<JsonArray>()) {
-    if (s_ring_count >= kMaxRingSize) break;
+    // Server-side cap. kMaxRingSize is a hard buffer size; kMaxFocusAirports
+    // is the smaller user-facing cap enforced first. Extra entries are
+    // silently dropped — the LAN portal + web settings both prevent the
+    // user from saving more than this, so hitting this branch means a
+    // stale payload made it past the client.
+    if (s_ring_count >= soft_cap) break;
     const char* name = entry["name"] | "?";
     const float lat = entry["lat"] | NAN;
     const float lon = entry["lon"] | NAN;

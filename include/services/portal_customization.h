@@ -229,12 +229,18 @@ function insertHeaderBefore(anchor,title,hint){
 }
 
 function decorateFocusEditor(field){
+  // Client-side cap — must match config::kMaxFocusAirports in include/config.h.
+  // The firmware also enforces this server-side; this is the friendly UI cap.
+  var MAX_AIRPORTS=6;
   var anchor=anchorFor(field);
   var sec=makeSection("Focus places","Extra spots the radar cycles through with a double-tap.");
   var chips=el("div",{"class":"pr-chips"});
   sec.appendChild(chips);
   var box=makeSearchBox("Add airport or address (e.g. PAO, Golden Gate Bridge)");
   sec.appendChild(box);
+  var capHint=el("div",{"class":"pr-hint","style":"display:none;margin-top:4px;font-size:0.85em;opacity:0.75"},
+    "Max "+MAX_AIRPORTS+" focus airports — remove one to add another.");
+  sec.appendChild(capHint);
   anchor.parentNode.insertBefore(sec,anchor);
   // Hide the raw JSON textarea and its label — chips are the source of truth
   // from the user's perspective; the field is a hidden save-handler pipe.
@@ -271,8 +277,12 @@ function decorateFocusEditor(field){
       if(changed){draw();ser();}
     });
   }
+  function updateCapHint(){
+    capHint.style.display=(arr.length>=MAX_AIRPORTS)?"block":"none";
+  }
   function draw(){
     chips.innerHTML="";
+    updateCapHint();
     if(!arr.length){
       chips.appendChild(el("div",{"class":"pr-chip-empty"},"No focus places yet — search below to add one, or reboot to pull in the defaults."));
       return;
@@ -296,6 +306,10 @@ function decorateFocusEditor(field){
   var run=deb(function(){
     search(input.value.trim()).then(function(rs){
       renderHits(hits,rs,function(r){
+        if(arr.length>=MAX_AIRPORTS){
+          input.value="";hits.style.display="none";updateCapHint();
+          return;
+        }
         arr.push({
           name:String(r.chipName).slice(0,15),
           lat:+Number(r.lat).toFixed(6),

@@ -33,6 +33,15 @@ constexpr unsigned long kBootTapMinMs = 40UL;
  *  SDL SPACE-key path use this to distinguish Single vs Double. */
 constexpr unsigned long kMultiTapWindowMs = 500UL;
 
+// --- Focus ring ---
+/** Conservative cap on user-editable focus airports. Home always occupies
+ *  slot 0, so total ring capacity is kMaxFocusAirports + 1. Chosen so the
+ *  double-tap cycle stays perceptually short (Home + N airports + Weather
+ *  + Cockpit = N+3 screens to loop back). The portal-side JS and the web
+ *  settings UI both enforce this same cap client-side; the firmware
+ *  enforces it server-side in focus_points.cpp as the last line of defense. */
+constexpr size_t kMaxFocusAirports = 6;
+
 // --- Optional BME280 environmental sensor (I²C, address 0x76 or 0x77) ---
 // Pins picked to avoid the SPI display on 0/1/3/4/10. Leave unconnected
 // if no sensor is present — env_sensor.cpp probes on boot and silently
