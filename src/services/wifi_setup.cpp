@@ -2,6 +2,8 @@
 
 #include "services/portal_customization.h"
 
+#include "ui/layer_style.h"
+
 #include <vector>
 
 #include <WiFi.h>
@@ -100,37 +102,51 @@ constexpr char kCoordInputAttrs[] =
     " type=\"number\" step=\"0.000001\"";
 constexpr char kRadiusInputAttrs[] =
     " type=\"number\" step=\"0.1\" min=\"1\"";
-constexpr char kFocusJsonAttrs[] =
-    " maxlength=\"640\" placeholder='[{\"name\":\"SFO\",\"lat\":37.62,\"lon\":-122.38,\"range_idx\":1}]'";
-
-WiFiManagerParameter s_param_lat("radar_lat", "Home latitude (deg)", "0",
+// Labels are intentionally terse — the JS enhancement in portal_customization.h
+// prefixes each pair with a section header + hint line, so the WiFiManager
+// label only needs to name the single field.
+WiFiManagerParameter s_param_lat("radar_lat", "Latitude", "0",
                                 kCoordParamLen, kCoordInputAttrs);
-WiFiManagerParameter s_param_lon("radar_lon", "Home longitude (deg)", "0",
+WiFiManagerParameter s_param_lon("radar_lon", "Longitude", "0",
                                 kCoordParamLen, kCoordInputAttrs);
 
-WiFiManagerParameter s_param_metar_lat("metar_lat",
-                                       "METAR map center latitude (deg)", "0",
+WiFiManagerParameter s_param_metar_lat("metar_lat", "Latitude", "0",
                                        kCoordParamLen, kCoordInputAttrs);
-WiFiManagerParameter s_param_metar_lon("metar_lon",
-                                       "METAR map center longitude (deg)", "0",
+WiFiManagerParameter s_param_metar_lon("metar_lon", "Longitude", "0",
                                        kCoordParamLen, kCoordInputAttrs);
-WiFiManagerParameter s_param_metar_radius("metar_rad",
-                                          "METAR map radius (nm)", "45",
+WiFiManagerParameter s_param_metar_radius("metar_rad", "Reach (nm)", "45",
                                           kRadiusParamLen, kRadiusInputAttrs);
 
-WiFiManagerParameter s_param_focus_json(
-    "focus_ring",
-    "Focus airports (JSON: [{name,lat,lon,range_idx}, ...])", "",
-    kFocusJsonParamLen, kFocusJsonAttrs);
+// Hidden by the JS chip editor on the LAN portal; only surfaces if scripting
+// fails. Value is still a JSON array (the shape the save handler expects) —
+// chips serialize back to this field on every change.
+WiFiManagerParameter s_param_focus_json("focus_ring", "Focus places", "",
+                                        kFocusJsonParamLen);
 
 constexpr int kHostnameParamLen = 32;
 WiFiManagerParameter s_param_hostname(
-    "ota_host", "mDNS hostname (OTA + web portal)",
+    "ota_host", "Local network name (advanced)",
     config::kPortalHostname, kHostnameParamLen);
 
-char s_runways_checkbox_attrs[32] = "type=\"checkbox\"";
-WiFiManagerParameter s_param_runways("show_runways", "Show airport runways", "T", 2,
-                                     s_runways_checkbox_attrs, WFM_LABEL_AFTER);
+// Layer visibility checkboxes — five overlays the user can turn on/off.
+// Declared inline (no struct-of-pointers) to keep static-init ordering
+// trivial: each WiFiManagerParameter and its attrs buffer live side-by-side
+// as ordinary globals, no cross-object references before main() runs.
+char s_lyr_coast_attrs[32] = "type=\"checkbox\"";
+char s_lyr_land_attrs[32]  = "type=\"checkbox\"";
+char s_lyr_rwlg_attrs[32]  = "type=\"checkbox\"";
+char s_lyr_rwfc_attrs[32]  = "type=\"checkbox\"";
+char s_lyr_tags_attrs[32]  = "type=\"checkbox\"";
+WiFiManagerParameter s_param_lyr_coast("lyr_coast", "Coastline", "T", 2,
+                                       s_lyr_coast_attrs, WFM_LABEL_AFTER);
+WiFiManagerParameter s_param_lyr_land("lyr_land",  "Land shading", "T", 2,
+                                      s_lyr_land_attrs, WFM_LABEL_AFTER);
+WiFiManagerParameter s_param_lyr_rwlg("lyr_rwlg",  "Airport runways", "T", 2,
+                                      s_lyr_rwlg_attrs, WFM_LABEL_AFTER);
+WiFiManagerParameter s_param_lyr_rwfc("lyr_rwfc",  "Focus airport runways", "T", 2,
+                                      s_lyr_rwfc_attrs, WFM_LABEL_AFTER);
+WiFiManagerParameter s_param_lyr_tags("lyr_tags",  "Plane info tags", "T", 2,
+                                      s_lyr_tags_attrs, WFM_LABEL_AFTER);
 
 void refreshPortalParamDefaults() {
   char lat_buf[kCoordParamLen + 1];
@@ -165,9 +181,18 @@ void refreshPortalParamDefaults() {
   }
   s_param_hostname.setValue(hostname.c_str(), kHostnameParamLen);
 
-  snprintf(s_runways_checkbox_attrs, sizeof(s_runways_checkbox_attrs),
-           "type=\"checkbox\"%s", ui::radar::showRunways() ? " checked" : "");
-  s_param_runways.setValue("T", 2);
+  // Prefill each layer checkbox with the currently-persisted state so the
+  // portal reflects reality on every load.
+  auto seed = [](char* attrs, ui::layers::Layer l, WiFiManagerParameter& p) {
+    snprintf(attrs, 32, "type=\"checkbox\"%s",
+             ui::layers::enabled(l) ? " checked" : "");
+    p.setValue("T", 2);
+  };
+  seed(s_lyr_coast_attrs, ui::layers::Layer::Coastline,    s_param_lyr_coast);
+  seed(s_lyr_land_attrs,  ui::layers::Layer::Land,         s_param_lyr_land);
+  seed(s_lyr_rwlg_attrs,  ui::layers::Layer::RunwaysLarge, s_param_lyr_rwlg);
+  seed(s_lyr_rwfc_attrs,  ui::layers::Layer::RunwaysFocus, s_param_lyr_rwfc);
+  seed(s_lyr_tags_attrs,  ui::layers::Layer::AircraftTags, s_param_lyr_tags);
 }
 
 void onPortalParamsSaved() {
@@ -180,7 +205,18 @@ void onPortalParamsSaved() {
                                           s_param_metar_radius.getValue());
   services::focus::saveRingJson(s_param_focus_json.getValue());
   services::ota::setHostname(s_param_hostname.getValue());
-  ui::radar::saveRunwaysFromPortal(s_param_runways.getValue());
+  // Route each layer checkbox to ui::layers::toggle only when its state
+  // actually flipped — layer_style writes NVS on every toggle, so guard
+  // against unnecessary flash churn on unchanged saves.
+  auto apply = [](WiFiManagerParameter& p, ui::layers::Layer l) {
+    const bool want = ui::radar::portalCheckboxChecked(p.getValue());
+    if (want != ui::layers::enabled(l)) ui::layers::toggle(l);
+  };
+  apply(s_param_lyr_coast, ui::layers::Layer::Coastline);
+  apply(s_param_lyr_land,  ui::layers::Layer::Land);
+  apply(s_param_lyr_rwlg,  ui::layers::Layer::RunwaysLarge);
+  apply(s_param_lyr_rwfc,  ui::layers::Layer::RunwaysFocus);
+  apply(s_param_lyr_tags,  ui::layers::Layer::AircraftTags);
 }
 
 // LAN-only params. The captive portal deliberately shows just Wi-Fi so the
@@ -196,8 +232,13 @@ void attachLanExtraParams(WiFiManager& wm) {
   wm.addParameter(&s_param_metar_lon);
   wm.addParameter(&s_param_metar_radius);
   wm.addParameter(&s_param_focus_json);
+  // Layer checkboxes appear grouped in the JS section under "Map layers".
+  wm.addParameter(&s_param_lyr_coast);
+  wm.addParameter(&s_param_lyr_land);
+  wm.addParameter(&s_param_lyr_rwlg);
+  wm.addParameter(&s_param_lyr_rwfc);
+  wm.addParameter(&s_param_lyr_tags);
   wm.addParameter(&s_param_hostname);
-  wm.addParameter(&s_param_runways);
   wm.setSaveParamsCallback(onPortalParamsSaved);
   // LAN menu: 'param' becomes visible because we now have params to show;
   // 'update' stays available for OTA firmware upload. 'exit' dropped — it

@@ -48,6 +48,9 @@ float fetchRadiusKm();
 
 bool showRunways();
 void saveRunwaysFromPortal(const char* checkbox_value);
+/** Interpret a WiFiManager checkbox value: empty = unchecked, otherwise
+ *  checked. Shared with wifi_setup.cpp for the layer-visibility checkboxes. */
+bool portalCheckboxChecked(const char* value);
 /** Format "5nm" / "10nm" / … for the given nautical-mile value. */
 void formatRangeLabel(char* buf, size_t len, int nm);
 void formatCurrentRangeLabel(char* buf, size_t len);
