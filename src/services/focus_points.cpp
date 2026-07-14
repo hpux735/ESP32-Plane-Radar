@@ -140,12 +140,12 @@ void applyCurrent() {
 
 void init() {
   loadRing();
-  Preferences prefs;
-  if (prefs.begin(kPrefsNamespace, true)) {
-    const uint8_t saved = prefs.getUChar(kPrefsIndexKey, 0);
-    prefs.end();
-    if (saved < s_ring_count) s_index = saved;
-  }
+  // Always land on Home (slot 0) at boot. The setIndex() write path still
+  // records the last-visited focus in NVS so the LAN portal / debugging
+  // can see it; we just don't restore it, because coming back to whatever
+  // focus was last on-screen before power-off is more surprising than
+  // starting fresh at the pilot's home planning point.
+  s_index = 0;
   applyCurrent();
 }
 

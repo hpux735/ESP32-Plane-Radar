@@ -94,12 +94,17 @@ void test_ring_size_is_capped(void) {
 
 // ---- setIndex + persistence ----------------------------------------
 
-void test_setIndex_persists_and_re_init_restores(void) {
+void test_init_always_lands_on_home_regardless_of_persisted_index(void) {
+  // setIndex still WRITES the last-visited index to NVS (visible in the
+  // LAN portal + /dbg for debugging), but init() no longer READS it.
+  // Every boot lands on Home (slot 0). Coming back to whatever focus was
+  // on-screen before power-off is more surprising than starting fresh at
+  // the pilot's home planning point.
   fp::init();
-  fp::setIndex(2);   // OAK
+  fp::setIndex(2);   // OAK — writes idx=2 to NVS
   TEST_ASSERT_EQUAL_UINT(2, fp::currentIndex());
-  fp::init();        // re-load from NVS
-  TEST_ASSERT_EQUAL_UINT(2, fp::currentIndex());
+  fp::init();        // simulates a boot
+  TEST_ASSERT_EQUAL_UINT(0, fp::currentIndex());
 }
 
 void test_setIndex_ignores_out_of_range(void) {
@@ -148,7 +153,7 @@ int main(int /*argc*/, char** /*argv*/) {
   RUN_TEST(test_save_ring_refuses_non_array_json);
   RUN_TEST(test_ring_entries_with_out_of_range_coords_are_skipped);
   RUN_TEST(test_ring_size_is_capped);
-  RUN_TEST(test_setIndex_persists_and_re_init_restores);
+  RUN_TEST(test_init_always_lands_on_home_regardless_of_persisted_index);
   RUN_TEST(test_setIndex_ignores_out_of_range);
   RUN_TEST(test_setIndex_applies_location_override_for_non_home);
   RUN_TEST(test_setIndex_clears_location_override_for_home);

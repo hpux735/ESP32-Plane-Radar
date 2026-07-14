@@ -132,20 +132,10 @@ function isLayers(v: unknown): v is Record<LayerId, boolean> {
          typeof l.runways === "boolean" && typeof l.tags === "boolean";
 }
 
-interface SessionState { focusIdx: number; rangeIdx: number; }
-const DEFAULT_SESSION: SessionState = { focusIdx: 0, rangeIdx: 1 };
-
-function isSession(v: unknown): v is SessionState {
-  if (typeof v !== "object" || v === null) return false;
-  const s = v as SessionState;
-  return Number.isInteger(s.focusIdx) && Number.isInteger(s.rangeIdx);
-}
-
 const loadedHome = loadJson(LS_KEYS.home, DEFAULT_HOME, isHome);
 const loadedMetar = loadJson(LS_KEYS.metar, DEFAULT_METAR, isMetar);
 const loadedFocus = loadJson(LS_KEYS.focus, DEFAULT_FOCUS_RING, isFocusRing);
 const loadedLayers = loadJson(LS_KEYS.layers, DEFAULT_LAYERS, isLayers);
-const loadedSession = loadJson(LS_KEYS.session, DEFAULT_SESSION, isSession);
 
 // If the persisted ring's first entry isn't a home slot, prepend one so
 // the "Home" cycle position always exists. isHome=true entries have their
@@ -163,19 +153,16 @@ loadedFocus[0].label = "Home";
 loadedFocus[0].lat = loadedHome.lat;
 loadedFocus[0].lon = loadedHome.lon;
 
-// Restore the last tap-cycled focus + range if it's still valid against
-// the current ring; otherwise fall back to Home + its default range.
+// Always land on Home (slot 0) at page load. The session file still records
+// the last-visited focusIdx / rangeIdx via persistSession() for debugging,
+// but we don't restore it — matches the firmware's boot behavior in
+// services::focus::init(). Returning to whatever was on-screen before
+// power-off is more surprising than starting fresh at the pilot's Home.
 // View mode always starts on "radar" — coming back to the site is more
 // useful with the map than a stale weather / cockpit view.
-const restoredFocusIdx =
-  loadedSession.focusIdx >= 0 && loadedSession.focusIdx < loadedFocus.length
-    ? loadedSession.focusIdx
-    : 0;
-const restoredRangeIdx =
-  loadedSession.rangeIdx >= 0 && loadedSession.rangeIdx < RANGE_PRESETS.length
-    ? loadedSession.rangeIdx
-    : loadedFocus[restoredFocusIdx].defaultRangeIdx;
+const restoredFocusIdx = 0;
 const restoredFocus = loadedFocus[restoredFocusIdx];
+const restoredRangeIdx = restoredFocus.defaultRangeIdx;
 
 export const state: AppState = {
   home: loadedHome,
