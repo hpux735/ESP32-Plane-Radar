@@ -3,9 +3,10 @@
 // The 896 KB SPIFFS partition (see partitions/plane_radar.csv) is
 // otherwise unused; this module gives it a purpose. Once the HTTPS
 // fetcher populates a tile, persist() writes it there so it survives
-// power cycles. At boot, mountAndHydrate() walks the partition and
-// hydrates the RAM TileStore with whatever tiles it finds — the
-// user's saved location doesn't have to re-fetch after every reset.
+// power cycles. Tiles are read from SPIFFS on-demand at each render
+// (see data::tile::TileStore::get) rather than pre-hydrated at boot,
+// because holding tiles in RAM across renders fragmented the heap
+// past the mbedTLS handshake budget.
 //
 // ESP32-only. The native emulator loads its bootstrap tile from disk
 // directly (see src/host/host_stubs.cpp::loadBootstrapTiles), so
@@ -17,12 +18,12 @@
 
 namespace services::tile_cache {
 
-// Mount the SPIFFS partition (formatting on first-ever boot) and
-// populate the TileStore singleton from every /tile_*.bin file it
-// finds. Silently no-ops if the partition won't mount — worst case
-// the device runs from the flash-embedded fallback tile until the
-// next fetch.
-void mountAndHydrate();
+// Mount the SPIFFS partition (formatting on first-ever boot). No-op
+// beyond mounting: hydration into RAM is not done here — the tile
+// store re-reads from SPIFFS per render (see the module comment). If
+// the partition refuses to mount, the device falls back to the
+// flash-embedded overview tile until the next successful fetch.
+void mountSpiffs();
 
 // Write `size` bytes to SPIFFS under a name derived from (z, x, y).
 // Overwrites any prior file at that name. Returns false on I/O

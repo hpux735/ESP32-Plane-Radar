@@ -14,17 +14,15 @@ void wifiLoop();
 bool wifiBootButtonPressed();
 /** GPIO + interrupt setup; call once early in setup(). */
 void bootButtonInit();
-/** Latched short tap (survives blocking HTTP/display work). */
-bool bootButtonConsumeTap();
 /** Call each loop iteration; triggers WiFi reset on long hold. */
 void bootButtonPollLongPress();
 
 /** Tap-pattern discriminator.
  *  Single = adjust current screen (range on radar, refresh on weather).
- *  Double = advance to the next screen in the ring. The button-side
- *  path uses a ~250 ms software window to distinguish Single vs Double;
- *  the accelerometer path bypasses the window and reports each
- *  hardware-discriminated event immediately. */
+ *  Double = advance to the next screen in the ring. The button-side path
+ *  waits config::kMultiTapWindowMs after the last tap to distinguish
+ *  Single vs Double; the accelerometer path bypasses the window and
+ *  reports each hardware-discriminated event immediately. */
 enum class BootTap : uint8_t { None, Single, Double };
 /** Consume the pending tap event (if any). Call once per loop after
  *  bootButtonPollLongPress(). */

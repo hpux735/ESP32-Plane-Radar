@@ -6,9 +6,9 @@
 // returns nullptr. That means the render path never has to think
 // about "map data missing" as a separate state.
 //
-// Persistence: this layer is RAM-only. Milestone 2 step 9 adds a
-// SPIFFS-backed variant that persists across reboots. Milestone 2
-// step 10 adds HTTPS fetch that populates the cache.
+// Persistence: SPIFFS via services::tile_cache::persist(); cache miss
+// re-reads from SPIFFS. Fetch: services::tile_fetch downloads over
+// HTTPS when the home tile changes.
 //
 // Not thread-safe: designed to be called only from the render/network
 // task on the ESP32 (Arduino loop() thread), same as the existing

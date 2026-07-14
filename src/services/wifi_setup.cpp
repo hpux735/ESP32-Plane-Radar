@@ -635,13 +635,12 @@ bool bootButtonConsumeTap() {
   return tap;
 }
 
-// Tap-count discriminator. Waits kMultiTapWindowMs after the LAST tap; if
-// no further taps arrive in that window, dispatches by count (1 → Single,
-// 2 → Double). Double fires the moment the second tap lands. The window
-// is 250 ms — enough for a human double-tap, tight enough to keep the
-// perceptual delay on single-tap short. Triple-tap discrimination was
-// removed when the app collapsed to a two-gesture ring (single = adjust
-// current screen, double = advance to next).
+// Tap-count discriminator. Waits config::kMultiTapWindowMs after the
+// LAST tap; if no further taps arrive in that window, dispatches by
+// count (1 → Single, 2 → Double). Double fires the moment the second
+// tap lands. Triple-tap discrimination was removed when the app
+// collapsed to a two-gesture ring (single = adjust current screen,
+// double = advance to next).
 BootTap bootButtonConsumeEvent() {
   // Accelerometer path first: the ADXL345 already discriminated single
   // vs double in hardware, so we skip the software window entirely and
@@ -652,13 +651,6 @@ BootTap bootButtonConsumeEvent() {
   if (services::tap_sensor::consumeDoubleTap()) return BootTap::Double;
   if (services::tap_sensor::consumeSingleTap()) return BootTap::Single;
 
-  // BOOT-button path: count taps in a 500 ms window. Started at 250 ms
-  // (kept perceptual delay on single-tap tight), but users' natural
-  // double-tap rhythm on a small tactile button is closer to 300-450 ms
-  // — half of double-taps were being dispatched as two singles at 250.
-  // 500 ms matches OS double-click defaults, still tight enough that a
-  // single tap doesn't feel laggy.
-  constexpr unsigned long kMultiTapWindowMs = 500;
   static uint8_t s_pending_count = 0;
   static unsigned long s_last_tap_ms = 0;
 
@@ -686,7 +678,8 @@ BootTap bootButtonConsumeEvent() {
     }
     return BootTap::None;
   }
-  if (s_pending_count > 0 && (now - s_last_tap_ms) > kMultiTapWindowMs) {
+  if (s_pending_count > 0 &&
+      (now - s_last_tap_ms) > config::kMultiTapWindowMs) {
     s_pending_count = 0;
     return BootTap::Single;
   }

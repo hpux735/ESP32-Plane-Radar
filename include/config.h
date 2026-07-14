@@ -28,6 +28,10 @@ constexpr gpio_num_t kBootPin = GPIO_NUM_9;
 constexpr unsigned long kBootResetHoldMs = 3000UL;
 /** Ignore BOOT taps shorter than this (debounce). */
 constexpr unsigned long kBootTapMinMs = 40UL;
+/** Software window after the LAST tap during which further taps count as
+ *  part of the same gesture. Both the hardware BOOT button path and the
+ *  SDL SPACE-key path use this to distinguish Single vs Double. */
+constexpr unsigned long kMultiTapWindowMs = 500UL;
 
 // --- Optional BME280 environmental sensor (I²C, address 0x76 or 0x77) ---
 // Pins picked to avoid the SPI display on 0/1/3/4/10. Leave unconnected

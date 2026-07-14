@@ -45,7 +45,7 @@ bool parseFilename(const char* name, uint8_t* z, uint16_t* x, uint16_t* y) {
 
 #ifndef USE_NATIVE
 
-void mountAndHydrate() {
+void mountSpiffs() {
   if (!SPIFFS.begin(true)) {
     Serial.println("tile_cache: SPIFFS.begin failed");
     return;
@@ -53,7 +53,7 @@ void mountAndHydrate() {
   Serial.printf("tile_cache: SPIFFS mounted (%u used of %u total bytes)\n",
                  static_cast<unsigned>(SPIFFS.usedBytes()),
                  static_cast<unsigned>(SPIFFS.totalBytes()));
-  // Deliberately NOT pre-loading tiles into RAM here — the tile store now
+  // Deliberately NOT pre-loading tiles into RAM here — the tile store
   // loads from SPIFFS on-demand at the first get() of each render and
   // frees on endRender(). Boot-time hydration would just be wasted
   // heap work that immediately gets freed by the first endRender().
@@ -83,7 +83,7 @@ bool persist(uint8_t z, uint16_t x, uint16_t y,
 #else  // USE_NATIVE
 
 // Emulator variant: bootstrap tile is loaded in host_stubs; no-op here.
-void mountAndHydrate() {}
+void mountSpiffs() {}
 
 bool persist(uint8_t /*z*/, uint16_t /*x*/, uint16_t /*y*/,
              const uint8_t* /*data*/, size_t /*size*/) {

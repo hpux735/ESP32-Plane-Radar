@@ -153,7 +153,7 @@ void setup() {
     statusScreenPortal();
   }
   services::location::init();
-  services::tile_cache::mountAndHydrate();
+  services::tile_cache::mountSpiffs();
   services::metar_config::init();
   ui::radar::rangeInit();
   services::focus::init();
