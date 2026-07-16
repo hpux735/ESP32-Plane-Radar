@@ -28,6 +28,7 @@
 #include "services/wifi_setup.h"
 #include "ui/cockpit_screen.h"
 #include "ui/layer_style.h"
+#include "ui/loading_overlay.h"
 #include "ui/radar_display.h"
 #include "ui/radar_range.h"
 #include "ui/status_screens.h"
@@ -119,12 +120,21 @@ void enterOffline() {
 }
 
 // Advance to the next screen in the ring; wraps back to radar 0.
+// Shows an animated spinner during the blocking network fetch + render
+// so the user gets immediate feedback on their tap.
 void advanceRing() {
   if (g_offline_preview) { enterRadar(0); return; }
   const size_t next = (g_ring_index + 1) % ringLength();
-  if (next < services::focus::count())      enterRadar(next);
-  else if (next == services::focus::count()) enterMetarWeather();
-  else                                        enterCockpit();
+  if (next < services::focus::count()) {
+    ui::loading::animateBriefly("Radar");
+    enterRadar(next);
+  } else if (next == services::focus::count()) {
+    ui::loading::animateBriefly("Weather");
+    enterMetarWeather();
+  } else {
+    ui::loading::animateBriefly("Cockpit");
+    enterCockpit();
+  }
 }
 
 // Single-tap = adjust the current screen. Mirrors src/main.cpp's
