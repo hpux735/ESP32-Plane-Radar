@@ -20,6 +20,7 @@
 #include "services/wifi_setup.h"
 #include "ui/cockpit_screen.h"
 #include "ui/layer_style.h"
+#include "ui/loading_overlay.h"
 #include "ui/radar_display.h"
 #include "ui/radar_range.h"
 #include "ui/status_screens.h"
@@ -87,13 +88,20 @@ void enterCockpit() {
 }
 
 // Advance to the next screen in the ring: 3 radar slots → weather →
-// cockpit → wrap. Skips the render for the destination screen up-front;
-// the loop's per-frame path will keep it painted from there.
+// cockpit → wrap. Shows an animated spinner during the blocking network
+// fetch + render so the user gets immediate feedback on their tap.
 void advanceRing() {
   g_ring_index = (g_ring_index + 1) % ringLength();
-  if (onRadar())        enterRadar(g_ring_index);
-  else if (onWeather()) enterMetarWeather();
-  else if (onCockpit()) enterCockpit();
+  if (onRadar()) {
+    ui::loading::animateBriefly("Radar");
+    enterRadar(g_ring_index);
+  } else if (onWeather()) {
+    ui::loading::animateBriefly("Weather");
+    enterMetarWeather();
+  } else if (onCockpit()) {
+    ui::loading::animateBriefly("Cockpit");
+    enterCockpit();
+  }
 }
 
 // Single-tap = adjust the current screen in place.
